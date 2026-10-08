@@ -262,7 +262,7 @@ function academyForm(a={}){
     <div class="field"><label>الملعب</label><select id="aField">${options('fields',a.fieldId)}</select></div>
     <div class="row2">
       <div class="field"><label>سعر الاشتراك الشهري</label><input id="aPrice" type="number" min="0" value="${a.price||''}"></div>
-      <div class="field"><label>نسبتي أنا %</label><input id="aPct" type="number" min="0" max="100" value="${a.myPct??''}" oninput="$('#aOther').textContent=Math.max(0,100-(+this.value||0))"></div>
+      <div class="field"><label>نسبة الاستاد %</label><input id="aPct" type="number" min="0" max="100" value="${a.myPct??''}" oninput="$('#aOther').textContent=Math.max(0,100-(+this.value||0))"></div>
     </div>
     <div class="hint">نسبة الأكاديمية = <b id="aOther">${a.myPct!=null?100-a.myPct:'—'}</b>% — التغيير بيأثر على الاشتراكات الجديدة والتجديدات الجاية بس.</div>`,
   async()=>{
