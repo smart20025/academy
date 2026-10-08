@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>إدارة الملاعب والأكاديميات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<style>
+:root{
+  --turf:#1d5a3a; --turf-dark:#133d27; --chalk:#f4f6f0; --paper:#ffffff;
+  --ink:#1b2620; --muted:#66756b; --line:#d9e0d5; --gold:#c98a12;
+  --red:#b3392f; --amber:#d8870f; --ok:#2a8a55;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:'Cairo',Tahoma,sans-serif;background:var(--chalk);color:var(--ink);line-height:1.6;padding-bottom:40px}
+header{background:var(--turf-dark);color:#fff;position:sticky;top:0;z-index:20;
+  background-image:linear-gradient(90deg,transparent calc(50% - 1px),rgba(255,255,255,.12) 50%,transparent calc(50% + 1px))}
+.bar{max-width:1100px;margin:auto;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{font-weight:900;font-size:20px}
+.bar .side{display:flex;gap:8px;align-items:center}
+.mode{font-size:12px;padding:3px 10px;border-radius:99px;background:rgba(255,255,255,.14)}
+.mode.warn{background:var(--amber)}
+nav{max-width:1100px;margin:auto;padding:0 12px;display:flex;gap:4px;overflow-x:auto}
+nav button{background:none;border:0;color:#cfe3d6;font:inherit;font-weight:600;padding:10px 14px;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+nav button.on{color:#fff;border-bottom-color:var(--gold)}
+nav button[hidden]{display:none}
+nav button:focus-visible,.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+main{max-width:1100px;margin:20px auto;padding:0 16px}
+h2{margin:0 0 14px;font-size:22px}
+h3{margin:0 0 10px;font-size:17px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.toolbar .grow{flex:1}
+.btn{font:inherit;font-weight:600;border:0;border-radius:8px;padding:8px 16px;cursor:pointer;background:var(--turf);color:#fff}
+.btn:hover{background:var(--turf-dark)}
+.btn.ghost{background:transparent;color:var(--turf);border:1px solid var(--turf)}
+.btn.gold{background:var(--gold)}
+.btn.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
+.btn.sm{padding:3px 10px;font-size:13px}
+input,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;width:100%}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:3px;font-weight:600}
+.field{margin-bottom:12px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:right;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:2px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.act{display:flex;gap:6px}
+.num{font-variant-numeric:tabular-nums;font-weight:700}
+.empty{color:var(--muted);text-align:center;padding:26px 10px}
+.tag{display:inline-block;padding:1px 10px;border-radius:99px;font-size:12px;font-weight:700;color:#fff}
+.tag.ok{background:var(--ok)} .tag.soon{background:var(--amber)} .tag.exp{background:var(--red)}
+.totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px}
+.tot{background:var(--turf);color:#fff;border-radius:10px;padding:14px 16px}
+.tot.gold{background:var(--gold)}
+.tot small{opacity:.85;display:block}
+.tot b{font-size:26px;font-weight:900}
+.pitch{border:2px solid var(--turf);border-radius:12px;background:var(--paper);margin-bottom:18px;overflow:hidden}
+.pitch-head{background:var(--turf);color:#fff;padding:10px 16px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-weight:700}
+.pitch-body{padding:6px 16px 14px}
+.pitch-foot{background:#eef3ea;padding:10px 16px;display:flex;gap:22px;flex-wrap:wrap;font-weight:700;border-top:1px dashed var(--turf)}
+.muted{color:var(--muted)}
+dialog{border:0;border-radius:12px;padding:0;width:min(480px,94vw);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+dialog::backdrop{background:rgba(10,25,15,.55)}
+.dlg{padding:20px}
+.dlg-act{display:flex;gap:8px;justify-content:flex-start;margin-top:8px}
+.hint{font-size:12px;color:var(--muted);margin-top:3px}
+#login{position:fixed;inset:0;z-index:50;background:var(--turf-dark);display:flex;align-items:center;justify-content:center;padding:16px}
+#login[hidden]{display:none}
+#login .box{background:#fff;border-radius:12px;padding:24px;width:min(380px,100%)}
+#lErr{color:var(--red);font-size:13px;min-height:20px}
+@media(max-width:560px){.row2{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="brand">⚽ إدارة الملاعب والأكاديميات</div>
+    <div class="side">
+      <span class="mode" id="modeTag"></span>
+      <button class="btn sm ghost" id="logoutBtn" hidden style="color:#fff;border-color:#fff"
+        onclick="firebase.auth().signOut().then(()=>location.reload())">خروج</button>
+    </div>
+  </div>
+  <nav id="nav">
+    <button data-t="accounts" class="on">الحسابات</button>
+    <button data-t="members">المشتركين</button>
+    <button data-t="rentals">إيجار الساعات</button>
+    <button data-t="academies">الأكاديميات</button>
+    <button data-t="fields">الملاعب</button>
+    <button data-t="logs" id="logsTab" hidden>سجل التحديثات</button>
+  </nav>
+</header>
+
+<main id="view"></main>
+
+<div id="login" hidden>
+  <div class="box">
+    <h3>تسجيل الدخول</h3>
+    <div class="field"><label>الإيميل</label><input id="lEmail" type="email" autocomplete="username"></div>
+    <div class="field"><label>الباسورد</label><input id="lPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div id="lErr"></div>
+    <button class="btn" style="width:100%" onclick="doLogin()">دخول</button>
+  </div>
+</div>
+
+<dialog id="dlg"><div class="dlg" id="dlgBody"></div></dialog>
+
+<script>
+/* ============ إعدادات Firebase ============ */
+const firebaseConfig = {
+  apiKey: "AIzaSyCT0yFcNQnHRsS8CfV9osTqin0-p_mSKmQ",
+  authDomain: "academ-b575d.firebaseapp.com",
+  projectId: "academ-b575d",
+  storageBucket: "academ-b575d.firebasestorage.app",
+  messagingSenderId: "35945920566",
+  appId: "1:35945920566:web:b8c0dd2e58295ab9e58097"
+};
+const ADMIN_EMAIL = "admin@yourmail.com";   // نفس الإيميل اللي في الـ Rules
+
+/* ============ طبقة البيانات ============ */
+const COLS = ['fields','academies','members','payments','rentals'];
+const store = {fields:[],academies:[],members:[],payments:[],rentals:[],logs:[]};
+const useFirebase = !firebaseConfig.apiKey.startsWith('YOUR');
+let fdb = null;
+let USER = {email:'محلي',uid:'local'};
+let isAdmin = !useFirebase;
+
+if(useFirebase){ firebase.initializeApp(firebaseConfig); fdb = firebase.firestore(); }
+
+const SEC = {fields:'الملاعب',academies:'الأكاديميات',members:'المشتركين',payments:'المدفوعات',rentals:'الإيجار'};
+const uid = ()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+
+function labelOf(c,o){
+  switch(c){
+    case 'fields': return 'ملعب: '+o.name;
+    case 'academies': return `أكاديمية: ${o.name} (نسبتي ${o.myPct}%)`;
+    case 'members': return `مشترك: ${o.name} — ${nameOf('academies',o.academyId)}`;
+    case 'payments': return `${o.type==='new'?'اشتراك جديد':'تجديد'}: ${o.memberName||''} — ${money(o.amount)}`;
+    case 'rentals': return `إيجار ${nameOf('fields',o.fieldId)} — ${o.hours} ساعة — ${money(o.total)}`;
+  }
+  return c;
+}
+async function writeLog(action,c,label){
+  const entry={action,section:c,label,user:USER.email,uid:USER.uid};
+  try{
+    if(useFirebase) await fdb.collection('logs').add({...entry,time:firebase.firestore.FieldValue.serverTimestamp()});
+    else{ store.logs.unshift({id:uid(),...entry,time:Date.now()}); localStorage.setItem('sm_logs',JSON.stringify(store.logs)); }
+  }catch(e){ console.warn('تعذر تسجيل العملية',e); }
+}
+
+const Data = {
+  start(){
+    if(useFirebase){
+      COLS.forEach(c=>{
+        fdb.collection(c).onSnapshot(snap=>{
+          store[c]=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+        }, toastErr);
+      });
+      if(isAdmin){
+        fdb.collection('logs').orderBy('time','desc').limit(500).onSnapshot(snap=>{
+          store.logs=snap.docs.map(d=>{const x=d.data();return {id:d.id,...x,time:x.time?.toMillis?.()??Date.now()};}); render();
+        }, e=>console.warn(e));
+      }
+    }else{
+      [...COLS,'logs'].forEach(c=>{ store[c]=JSON.parse(localStorage.getItem('sm_'+c)||'[]'); });
+      render();
+    }
+  },
+  _save(c){ if(!useFirebase) localStorage.setItem('sm_'+c,JSON.stringify(store[c])); },
+  async add(c,obj,o={}){
+    let id;
+    if(useFirebase){ id=(await fdb.collection(c).add({...obj,createdAt:firebase.firestore.FieldValue.serverTimestamp()})).id; }
+    else{ id=uid(); store[c].push({id,...obj}); this._save(c); render(); }
+    if(!o.silent) await writeLog('add',c,labelOf(c,obj));
+    return id;
+  },
+  async set(c,id,obj,o={}){
+    const merged={...byId(c,id),...obj};
+    if(useFirebase) await fdb.collection(c).doc(id).update(obj);
+    else{ const i=store[c].findIndex(x=>x.id===id); store[c][i]=merged; this._save(c); render(); }
+    if(!o.silent) await writeLog('edit',c,labelOf(c,merged));
+  },
+  async del(c,id,o={}){
+    const old=byId(c,id);
+    if(useFirebase) await fdb.collection(c).doc(id).delete();
+    else{ store[c]=store[c].filter(x=>x.id!==id); this._save(c); render(); }
+    if(!o.silent && old) await writeLog('delete',c,labelOf(c,old));
+  }
+};
+function toastErr(e){ console.error(e); alert('حصل خطأ في Firebase: '+(e.message||e)); }
+
+/* ============ أدوات ============ */
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const money = n=>(Math.round((+n||0)*100)/100).toLocaleString('ar-EG')+' ج';
+const todayStr = ()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+function addMonth(s){
+  const [y,m,d]=s.split('-').map(Number);
+  const t=new Date(y,m,1);
+  const last=new Date(t.getFullYear(),t.getMonth()+1,0).getDate();
+  t.setDate(Math.min(d,last));
+  return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+}
+function daysLeft(end){ return Math.round((new Date(end+'T00:00:00')-new Date(todayStr()+'T00:00:00'))/86400000); }
+function statusOf(end){
+  const d=daysLeft(end);
+  if(d<0) return ['exp','منتهي'];
+  if(d<=3) return ['soon','قرب يخلص ('+d+' يوم)'];
+  return ['ok','ساري ('+d+' يوم)'];
+}
+const byId=(c,id)=>store[c].find(x=>x.id===id);
+const nameOf=(c,id)=>byId(c,id)?.name ?? '— محذوف —';
+const val=id=>$('#'+id).value.trim();
+const options=(c,sel,filter)=>store[c].filter(filter||(()=>true)).map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
+
+function openDlg(html,onSave,saveLabel='حفظ'){
+  $('#dlgBody').innerHTML = html+`<div class="dlg-act"><button class="btn" id="dSave">${saveLabel}</button><button class="btn ghost" id="dCancel">إلغاء</button></div>`;
+  $('#dCancel').onclick=()=>$('#dlg').close();
+  $('#dSave').onclick=async()=>{
+    try{ const ok=await onSave(); if(ok!==false) $('#dlg').close(); }catch(e){toastErr(e);}
+  };
+  $('#dlg').showModal();
+}
+
+/* ============ الملاعب ============ */
+function fieldForm(f={}){
+  openDlg(`<h3>${f.id?'تعديل ملعب':'ملعب جديد'}</h3>
+    <div class="field"><label>اسم الملعب</label><input id="fName" value="${esc(f.name||'')}"></div>
+    <div class="field"><label>سعر ساعة الإيجار (افتراضي)</label><input id="fRate" type="number" min="0" value="${f.rate||''}"></div>`,
+  async()=>{
+    if(!val('fName')) return alert('اكتب اسم الملعب'), false;
+    const o={name:val('fName'),rate:+val('fRate')||0};
+    f.id? await Data.set('fields',f.id,o) : await Data.add('fields',o);
+  });
+}
+function viewFields(){
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">الملاعب</h2><button class="btn" onclick="fieldForm()">+ ملعب جديد</button></div>
+  <div class="panel tablewrap">${store.fields.length?`<table><tr><th>الملعب</th><th>سعر الساعة</th><th>أكاديميات</th><th></th></tr>
+  ${store.fields.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td class="num">${money(f.rate)}</td>
+   <td>${store.academies.filter(a=>a.fieldId===f.id).length}</td>
+   <td class="act"><button class="btn sm ghost" onclick="fieldForm(byId('fields','${f.id}'))">تعديل</button>
+   <button class="btn sm danger" onclick="delItem('fields','${f.id}')">حذف</button></td></tr>`).join('')}</table>`
+   :'<div class="empty">ضيف أول ملعب عشان تبدأ</div>'}</div>`;
+}
+
+/* ============ الأكاديميات ============ */
+function academyForm(a={}){
+  if(!store.fields.length) return alert('ضيف ملعب الأول');
+  openDlg(`<h3>${a.id?'تعديل أكاديمية':'أكاديمية جديدة'}</h3>
+    <div class="field"><label>اسم الأكاديمية</label><input id="aName" value="${esc(a.name||'')}"></div>
+    <div class="field"><label>الملعب</label><select id="aField">${options('fields',a.fieldId)}</select></div>
+    <div class="row2">
+      <div class="field"><label>سعر الاشتراك الشهري</label><input id="aPrice" type="number" min="0" value="${a.price||''}"></div>
+      <div class="field"><label>نسبتي أنا %</label><input id="aPct" type="number" min="0" max="100" value="${a.myPct??''}" oninput="$('#aOther').textContent=Math.max(0,100-(+this.value||0))"></div>
+    </div>
+    <div class="hint">نسبة الأكاديمية = <b id="aOther">${a.myPct!=null?100-a.myPct:'—'}</b>% — التغيير بيأثر على الاشتراكات الجديدة والتجديدات الجاية بس.</div>`,
+  async()=>{
+    if(!val('aName')) return alert('اكتب اسم الأكاديمية'), false;
+    const p=+val('aPct'); if(!(p>=0&&p<=100)) return alert('النسبة لازم بين 0 و 100'), false;
+    const o={name:val('aName'),fieldId:val('aField'),price:+val('aPrice')||0,myPct:p};
+    a.id? await Data.set('academies',a.id,o) : await Data.add('academies',o);
+  });
+}
+function viewAcademies(){
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">الأكاديميات</h2><button class="btn" onclick="academyForm()">+ أكاديمية جديدة</button></div>
+  <div class="panel tablewrap">${store.academies.length?`<table><tr><th>الأكاديمية</th><th>الملعب</th><th>الاشتراك</th><th>نسبتي</th><th>نسبة الأكاديمية</th><th>مشتركين</th><th></th></tr>
+  ${store.academies.map(a=>`<tr><td><b>${esc(a.name)}</b></td><td>${esc(nameOf('fields',a.fieldId))}</td><td class="num">${money(a.price)}</td>
+   <td class="num">${a.myPct}%</td><td class="num">${100-a.myPct}%</td><td>${store.members.filter(m=>m.academyId===a.id).length}</td>
+   <td class="act"><button class="btn sm ghost" onclick="academyForm(byId('academies','${a.id}'))">تعديل</button>
+   <button class="btn sm danger" onclick="delItem('academies','${a.id}')">حذف</button></td></tr>`).join('')}</table>`
+   :'<div class="empty">لسه مفيش أكاديميات</div>'}</div>`;
+}
+
+/* ============ المشتركين + التجديد ============ */
+let memberFilter={q:'',academy:'',status:''};
+function calcSplit(academy,amount){
+  const mine=Math.round(amount*academy.myPct)/100;
+  return {myShare:mine,academyShare:Math.round((amount-mine)*100)/100,pct:academy.myPct};
+}
+function memberForm(){
+  const fieldsWithAcad=store.fields.filter(f=>store.academies.some(a=>a.fieldId===f.id));
+  if(!fieldsWithAcad.length) return alert('ضيف ملعب وأكاديمية عليه الأول');
+  const f0=fieldsWithAcad[0], a0=store.academies.find(a=>a.fieldId===f0.id);
+  openDlg(`<h3>مشترك جديد</h3>
+    <div class="field"><label>اسم المشترك</label><input id="mName"></div>
+    <div class="field"><label>رقم التليفون</label><input id="mPhone" inputmode="tel"></div>
+    <div class="field"><label>الملعب</label>
+      <select id="mField" onchange="pickAcademies()">${fieldsWithAcad.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></div>
+    <div class="field"><label>الأكاديمية</label>
+      <select id="mAcad" onchange="$('#mAmount').value=byId('academies',this.value).price||''">
+      ${store.academies.filter(a=>a.fieldId===f0.id).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+    <div class="row2">
+      <div class="field"><label>المبلغ المدفوع</label><input id="mAmount" type="number" min="0" value="${a0.price||''}"></div>
+      <div class="field"><label>أول يوم اشتراك</label><input id="mStart" type="date" value="${todayStr()}" onchange="$('#mEnd').value=addMonth(this.value)"></div>
+    </div>
+    <div class="field"><label>تاريخ الانتهاء (شهر)</label><input id="mEnd" type="date" value="${addMonth(todayStr())}"></div>`,
+  async()=>{
+    if(!val('mName')) return alert('اكتب اسم المشترك'), false;
+    const amount=+val('mAmount'); if(!(amount>0)) return alert('اكتب المبلغ'), false;
+    const a=byId('academies',val('mAcad')); const s=calcSplit(a,amount);
+    const mid=await Data.add('members',{name:val('mName'),phone:val('mPhone'),academyId:a.id,fieldId:a.fieldId,start:val('mStart'),end:val('mEnd')});
+    await Data.add('payments',{memberId:mid,memberName:val('mName'),academyId:a.id,fieldId:a.fieldId,type:'new',amount,...s,date:val('mStart'),start:val('mStart'),end:val('mEnd')},{silent:true});
+  });
+}
+function pickAcademies(){
+  const list=store.academies.filter(a=>a.fieldId===val('mField'));
+  $('#mAcad').innerHTML=list.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  $('#mAmount').value=list[0]?.price||'';
+}
+function renewForm(id){
+  const m=byId('members',id), a=byId('academies',m.academyId);
+  if(!a) return alert('الأكاديمية دي اتحذفت');
+  const startDefault=daysLeft(m.end)>=0?m.end:todayStr();
+  openDlg(`<h3>تجديد: ${esc(m.name)}</h3>
+    <div class="hint" style="margin-bottom:10px">${esc(a.name)} — الاشتراك الحالي ينتهي ${m.end}</div>
+    <div class="row2">
+      <div class="field"><label>المبلغ</label><input id="rAmount" type="number" min="0" value="${a.price||''}"></div>
+      <div class="field"><label>بداية التجديد</label><input id="rStart" type="date" value="${startDefault}" onchange="$('#rEnd').value=addMonth(this.value)"></div>
+    </div>
+    <div class="field"><label>الانتهاء الجديد</label><input id="rEnd" type="date" value="${addMonth(startDefault)}"></div>`,
+  async()=>{
+    const amount=+val('rAmount'); if(!(amount>0)) return alert('اكتب المبلغ'), false;
+    const s=calcSplit(a,amount);
+    await Data.add('payments',{memberId:m.id,memberName:m.name,academyId:a.id,fieldId:a.fieldId,type:'renew',amount,...s,date:todayStr(),start:val('rStart'),end:val('rEnd')});
+    await Data.set('members',m.id,{start:val('rStart'),end:val('rEnd')},{silent:true});
+  },'تأكيد التجديد');
+}
+function historyOf(id){
+  const m=byId('members',id);
+  const rows=store.payments.filter(p=>p.memberId===id).sort((a,b)=>b.date.localeCompare(a.date));
+  openDlg(`<h3>سجل مدفوعات: ${esc(m.name)}</h3><div class="tablewrap"><table><tr><th>النوع</th><th>التاريخ</th><th>المبلغ</th><th>نصيبي</th><th>الفترة</th></tr>
+   ${rows.map(p=>`<tr><td>${p.type==='new'?'جديد':'تجديد'}</td><td>${p.date}</td><td class="num">${money(p.amount)}</td><td class="num">${money(p.myShare)}</td><td>${p.start} → ${p.end}</td></tr>`).join('')}</table></div>`,()=>true,'تمام');
+}
+function viewMembers(){
+  const q=memberFilter.q.toLowerCase();
+  const list=store.members.filter(m=>
+    (!q||m.name.toLowerCase().includes(q)||(m.phone||'').includes(q)) &&
+    (!memberFilter.academy||m.academyId===memberFilter.academy) &&
+    (!memberFilter.status||statusOf(m.end)[0]===memberFilter.status)
+  ).sort((a,b)=>a.end.localeCompare(b.end));
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">المشتركين</h2><button class="btn" onclick="memberForm()">+ مشترك جديد</button></div>
+  <div class="toolbar">
+    <input style="max-width:220px" placeholder="بحث بالاسم أو الرقم" value="${esc(memberFilter.q)}" oninput="memberFilter.q=this.value;keepFocus(this)">
+    <select style="max-width:200px" onchange="memberFilter.academy=this.value;render()"><option value="">كل الأكاديميات</option>${options('academies',memberFilter.academy)}</select>
+    <select style="max-width:160px" onchange="memberFilter.status=this.value;render()">
+      <option value="">كل الحالات</option>
+      <option value="ok" ${memberFilter.status==='ok'?'selected':''}>ساري</option>
+      <option value="soon" ${memberFilter.status==='soon'?'selected':''}>قرب يخلص</option>
+      <option value="exp" ${memberFilter.status==='exp'?'selected':''}>منتهي</option></select>
+  </div>
+  <div class="panel tablewrap">${list.length?`<table><tr><th>الاسم</th><th>التليفون</th><th>الملعب</th><th>الأكاديمية</th><th>البداية</th><th>الانتهاء</th><th>الحالة</th><th></th></tr>
+  ${list.map(m=>{const [c,t]=statusOf(m.end);return `<tr><td><b>${esc(m.name)}</b></td><td>${esc(m.phone||'—')}</td>
+   <td>${esc(nameOf('fields',m.fieldId))}</td><td>${esc(nameOf('academies',m.academyId))}</td><td>${m.start}</td><td>${m.end}</td>
+   <td><span class="tag ${c}">${t}</span></td>
+   <td class="act"><button class="btn sm gold" onclick="renewForm('${m.id}')">تجديد</button>
+   <button class="btn sm ghost" onclick="historyOf('${m.id}')">السجل</button>
+   <button class="btn sm danger" onclick="delMember('${m.id}')">حذف</button></td></tr>`}).join('')}</table>`
+   :'<div class="empty">مفيش مشتركين مطابقين</div>'}</div>`;
+}
+function keepFocus(el){
+  const pos=el.selectionStart; render(); const n=document.querySelector('input[placeholder^="بحث"]'); n.focus(); n.setSelectionRange(pos,pos);
+}
+async function delMember(id){
+  if(!confirm('هتمسح المشترك وكل سجل مدفوعاته (وده هيتخصم من الحسابات). متأكد؟')) return;
+  const m=byId('members',id);
+  await Promise.all(store.payments.filter(p=>p.memberId===id).map(p=>Data.del('payments',p.id,{silent:true})));
+  await Data.del('members',id);
+}
+
+/* ============ إيجار الساعات ============ */
+function rentalForm(){
+  if(!store.fields.length) return alert('ضيف ملعب الأول');
+  const f0=store.fields[0];
+  openDlg(`<h3>حجز إيجار جديد</h3>
+    <div class="field"><label>الملعب</label><select id="rField" onchange="$('#rRate').value=byId('fields',this.value).rate||'';calcRent()">${options('fields')}</select></div>
+    <div class="field"><label>اسم المستأجر (اختياري)</label><input id="rName"></div>
+    <div class="row2">
+      <div class="field"><label>التاريخ</label><input id="rDate" type="date" value="${todayStr()}"></div>
+      <div class="field"><label>عدد الساعات</label><input id="rHours" type="number" min="0.5" step="0.5" value="1" oninput="calcRent()"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>سعر الساعة</label><input id="rRate" type="number" min="0" value="${f0.rate||''}" oninput="calcRent()"></div>
+      <div class="field"><label>الإجمالي</label><input id="rTotal" type="number" min="0" value="${f0.rate||''}"></div>
+    </div>`,
+  async()=>{
+    const hours=+val('rHours'), total=+val('rTotal');
+    if(!(hours>0)||!(total>=0)) return alert('راجع الساعات والمبلغ'), false;
+    await Data.add('rentals',{fieldId:val('rField'),renter:val('rName'),date:val('rDate'),hours,rate:+val('rRate')||0,total});
+  });
+}
+function calcRent(){ $('#rTotal').value=(+$('#rHours').value||0)*(+$('#rRate').value||0); }
+function viewRentals(){
+  const list=[...store.rentals].sort((a,b)=>b.date.localeCompare(a.date));
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">إيجار الساعات</h2><button class="btn" onclick="rentalForm()">+ حجز جديد</button></div>
+  <div class="panel tablewrap">${list.length?`<table><tr><th>التاريخ</th><th>الملعب</th><th>المستأجر</th><th>الساعات</th><th>سعر الساعة</th><th>الإجمالي</th><th></th></tr>
+  ${list.map(r=>`<tr><td>${r.date}</td><td>${esc(nameOf('fields',r.fieldId))}</td><td>${esc(r.renter||'—')}</td><td class="num">${r.hours}</td><td class="num">${money(r.rate)}</td><td class="num">${money(r.total)}</td>
+   <td class="act"><button class="btn sm danger" onclick="delItem('rentals','${r.id}')">حذف</button></td></tr>`).join('')}</table>`
+   :'<div class="empty">مفيش حجوزات لسه</div>'}</div>`;
+}
+
+/* ============ الحسابات ============ */
+let monthFilter=todayStr().slice(0,7);
+function viewAccounts(){
+  const inRange=d=>!monthFilter||d.startsWith(monthFilter);
+  const pays=store.payments.filter(p=>inRange(p.date));
+  const rents=store.rentals.filter(r=>inRange(r.date));
+  let T={all:0,mine:0,acad:0,rent:0};
+  const cards=store.fields.map(f=>{
+    const acRows=store.academies.filter(a=>a.fieldId===f.id).map(a=>{
+      const ps=pays.filter(p=>p.academyId===a.id);
+      return {a,
+        news:ps.filter(p=>p.type==='new').length, renews:ps.filter(p=>p.type==='renew').length,
+        total:ps.reduce((s,p)=>s+p.amount,0), mine:ps.reduce((s,p)=>s+p.myShare,0), acad:ps.reduce((s,p)=>s+p.academyShare,0),
+        members:store.members.filter(m=>m.academyId===a.id).length};
+    });
+    const rs=rents.filter(r=>r.fieldId===f.id);
+    const rentTotal=rs.reduce((s,r)=>s+r.total,0), rentHours=rs.reduce((s,r)=>s+r.hours,0);
+    const mine=acRows.reduce((s,x)=>s+x.mine,0), acad=acRows.reduce((s,x)=>s+x.acad,0), acTotal=acRows.reduce((s,x)=>s+x.total,0);
+    T.all+=acTotal+rentTotal; T.mine+=mine; T.acad+=acad; T.rent+=rentTotal;
+    return `<section class="pitch">
+      <div class="pitch-head"><span>${esc(f.name)}</span><span>صافي الملعب ليا: ${money(mine+rentTotal)}</span></div>
+      <div class="pitch-body tablewrap">
+       ${acRows.length?`<table><tr><th>الأكاديمية</th><th>مشتركين حاليين</th><th>اشتراك جديد</th><th>تجديد</th><th>إجمالي المقبوض</th><th>نسبتي</th><th>نصيبي</th><th>نصيب الأكاديمية</th></tr>
+       ${acRows.map(x=>`<tr><td><b>${esc(x.a.name)}</b></td><td class="num">${x.members}</td><td class="num">${x.news}</td><td class="num">${x.renews}</td>
+         <td class="num">${money(x.total)}</td><td class="num">${x.a.myPct}%</td><td class="num">${money(x.mine)}</td><td class="num">${money(x.acad)}</td></tr>`).join('')}</table>`
+       :'<div class="empty">مفيش أكاديميات على الملعب ده</div>'}
+      </div>
+      <div class="pitch-foot">
+        <span>إيجار الساعات: ${money(rentTotal)} <span class="muted">(${rentHours} ساعة)</span></span>
+        <span>نصيبي من الأكاديميات: ${money(mine)}</span>
+        <span>مستحق للأكاديميات: ${money(acad)}</span>
+      </div></section>`;
+  }).join('');
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">الحسابات</h2>
+    <div style="display:flex;gap:8px;align-items:center"><label style="margin:0">الشهر</label>
+    <input type="month" style="width:auto" value="${monthFilter}" onchange="monthFilter=this.value;render()">
+    <button class="btn sm ghost" onclick="monthFilter='';render()">كل الفترات</button></div></div>
+  <div class="totals">
+    <div class="tot gold"><small>صافي ليا (نسب + إيجار)</small><b>${money(T.mine+T.rent)}</b></div>
+    <div class="tot"><small>نصيبي من الأكاديميات</small><b>${money(T.mine)}</b></div>
+    <div class="tot"><small>إيراد إيجار الساعات</small><b>${money(T.rent)}</b></div>
+    <div class="tot"><small>مستحق للأكاديميات</small><b>${money(T.acad)}</b></div>
+  </div>
+  ${cards||'<div class="panel empty">ضيف الملاعب والأكاديميات وسجل المشتركين عشان الحسابات تظهر</div>'}`;
+}
+
+/* ============ سجل التحديثات (للأدمن فقط) ============ */
+let logFilter={user:'',action:''};
+const ACT={add:['ok','إضافة'],edit:['soon','تعديل'],delete:['exp','حذف']};
+function filteredLogs(){
+  return store.logs.filter(l=>(!logFilter.user||l.user===logFilter.user)&&(!logFilter.action||l.action===logFilter.action));
+}
+function viewLogs(){
+  const users=[...new Set(store.logs.map(l=>l.user))];
+  const list=filteredLogs();
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">سجل التحديثات</h2>
+    <button class="btn sm danger" onclick="clearLogs()" ${list.length?'':'disabled'}>مسح المعروض (${list.length})</button></div>
+  <div class="toolbar">
+    <select style="max-width:240px" onchange="logFilter.user=this.value;render()"><option value="">كل المستخدمين</option>
+      ${users.map(u=>`<option value="${esc(u)}" ${u===logFilter.user?'selected':''}>${esc(u)}</option>`).join('')}</select>
+    <select style="max-width:160px" onchange="logFilter.action=this.value;render()"><option value="">كل العمليات</option>
+      ${Object.entries(ACT).map(([k,v])=>`<option value="${k}" ${k===logFilter.action?'selected':''}>${v[1]}</option>`).join('')}</select>
+  </div>
+  <div class="panel tablewrap">${list.length?`<table><tr><th>الوقت</th><th>المستخدم</th><th>العملية</th><th>القسم</th><th>التفاصيل</th><th></th></tr>
+  ${list.map(l=>`<tr><td>${new Date(l.time).toLocaleString('ar-EG')}</td><td>${esc(l.user)}</td>
+    <td><span class="tag ${ACT[l.action]?.[0]||''}">${ACT[l.action]?.[1]||l.action}</span></td>
+    <td>${SEC[l.section]||''}</td><td style="white-space:normal">${esc(l.label)}</td>
+    <td class="act"><button class="btn sm danger" onclick="delLog('${l.id}')">حذف</button></td></tr>`).join('')}</table>`
+   :'<div class="empty">مفيش عمليات مسجلة</div>'}</div>`;
+}
+async function delLog(id){
+  if(useFirebase) await fdb.collection('logs').doc(id).delete();
+  else{ store.logs=store.logs.filter(l=>l.id!==id); localStorage.setItem('sm_logs',JSON.stringify(store.logs)); render(); }
+}
+async function clearLogs(){
+  const list=filteredLogs();
+  if(!list.length||!confirm(`هتمسح ${list.length} سجل. متأكد؟`)) return;
+  if(useFirebase){
+    for(let i=0;i<list.length;i+=400){
+      const b=fdb.batch(); list.slice(i,i+400).forEach(l=>b.delete(fdb.collection('logs').doc(l.id))); await b.commit();
+    }
+  }else{
+    const ids=new Set(list.map(l=>l.id)); store.logs=store.logs.filter(l=>!ids.has(l.id));
+    localStorage.setItem('sm_logs',JSON.stringify(store.logs)); render();
+  }
+}
+
+/* ============ حذف عام + التنقل ============ */
+async function delItem(col,id){
+  if(col==='fields' && (store.academies.some(a=>a.fieldId===id)||store.rentals.some(r=>r.fieldId===id)))
+    return alert('الملعب عليه أكاديميات أو حجوزات، امسحها الأول');
+  if(col==='academies' && store.members.some(m=>m.academyId===id))
+    return alert('الأكاديمية عليها مشتركين، امسحهم الأول');
+  if(!confirm('متأكد من الحذف؟')) return;
+  await Data.del(col,id);
+}
+let tab='accounts';
+const views={accounts:viewAccounts,members:viewMembers,rentals:viewRentals,academies:viewAcademies,fields:viewFields,logs:viewLogs};
+function render(){
+  if(tab==='logs'&&!isAdmin) tab='accounts';
+  $('#view').innerHTML=views[tab]();
+}
+$('#nav').onclick=e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  tab=b.dataset.t; document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b)); render();
+};
+
+/* ============ تسجيل الدخول والتشغيل ============ */
+async function doLogin(){
+  try{ await firebase.auth().signInWithEmailAndPassword(val('lEmail'),$('#lPass').value); $('#lErr').textContent=''; }
+  catch(e){ $('#lErr').textContent='الإيميل أو الباسورد غلط'; }
+}
+const mt=$('#modeTag');
+if(!useFirebase){
+  mt.textContent='وضع تجريبي (تخزين محلي)'; mt.classList.add('warn');
+  $('#logsTab').hidden=false; Data.start();
+}else{
+  let started=false;
+  firebase.auth().onAuthStateChanged(u=>{
+    $('#login').hidden=!!u; $('#logoutBtn').hidden=!u;
+    if(!u) return;
+    USER={email:u.email,uid:u.uid};
+    isAdmin=u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase();
+    $('#logsTab').hidden=!isAdmin;
+    mt.textContent=(isAdmin?'أدمن: ':'مستخدم: ')+u.email;
+    if(!started){ started=true; Data.start(); }
+  });
+}
+</script>
+</body>
+</html>
