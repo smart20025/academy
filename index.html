@@ -77,6 +77,14 @@ dialog::backdrop{background:rgba(10,25,15,.55)}
 #login[hidden]{display:none}
 #login .box{background:#fff;border-radius:12px;padding:24px;width:min(380px,100%)}
 #lErr{color:var(--red);font-size:13px;min-height:20px}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  header,.noprint,#login,dialog{display:none!important}
+  body{background:#fff}
+  main{margin:0;max-width:none;padding:0}
+  tr{break-inside:avoid} h3{break-after:avoid}
+  td,th{white-space:normal}
+}
 @media(max-width:560px){.row2{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -99,6 +107,7 @@ dialog::backdrop{background:rgba(10,25,15,.55)}
     <button data-t="academies">الأكاديميات</button>
     <button data-t="fields">الملاعب</button>
     <button data-t="logs" id="logsTab" hidden>سجل التحديثات</button>
+    <button data-t="report" id="reportTab" hidden>تقرير الأكاديميات</button>
   </nav>
 </header>
 
@@ -332,7 +341,7 @@ function renewForm(id){
   async()=>{
     const amount=+val('rAmount'); if(!(amount>0)) return alert('اكتب المبلغ'), false;
     const s=calcSplit(a,amount);
-    await Data.add('payments',{memberId:m.id,memberName:m.name,academyId:a.id,fieldId:a.fieldId,type:'renew',amount,...s,date:todayStr(),start:val('rStart'),end:val('rEnd')});
+    await Data.add('payments',{memberId:m.id,memberName:m.name,academyId:a.id,fieldId:a.fieldId,type:'renew',amount,...s,date:val('rStart'),start:val('rStart'),end:val('rEnd')});
     await Data.set('members',m.id,{start:val('rStart'),end:val('rEnd')},{silent:true});
   },'تأكيد التجديد');
 }
@@ -495,7 +504,56 @@ async function clearLogs(){
     localStorage.setItem('sm_logs',JSON.stringify(store.logs)); render();
   }
 }
-
+/* ============ تقرير الأكاديميات (للأدمن فقط) ============ */
+let repFilter={month:todayStr().slice(0,7),academy:''};
+function viewReport(){
+  const inR=d=>!repFilter.month||d.startsWith(repFilter.month);
+  const acs=store.academies.filter(a=>!repFilter.academy||a.id===repFilter.academy);
+  const G={total:0,mine:0,acad:0};
+  const blocks=acs.map(a=>{
+    const ps=store.payments.filter(p=>p.academyId===a.id&&inR(p.date)).sort((x,y)=>x.date.localeCompare(y.date));
+    const total=ps.reduce((s,p)=>s+p.amount,0), mine=ps.reduce((s,p)=>s+p.myShare,0), acad=ps.reduce((s,p)=>s+p.academyShare,0);
+    const nNew=ps.filter(p=>p.type==='new').length, nRen=ps.length-nNew;
+    G.total+=total; G.mine+=mine; G.acad+=acad;
+    let monthly='';
+    if(!repFilter.month && ps.length){
+      const byM={};
+      ps.forEach(p=>{const k=p.date.slice(0,7);const o=byM[k]=byM[k]||{n:0,t:0,m:0,a:0};o.n++;o.t+=p.amount;o.m+=p.myShare;o.a+=p.academyShare;});
+      monthly=`<div class="tablewrap" style="margin-bottom:12px"><table><tr><th>الشهر</th><th>عدد العمليات</th><th>الإجمالي</th><th>نصيبي</th><th>مستحق للأكاديمية</th></tr>
+      ${Object.keys(byM).sort().map(k=>`<tr><td>${k}</td><td class="num">${byM[k].n}</td><td class="num">${money(byM[k].t)}</td><td class="num">${money(byM[k].m)}</td><td class="num">${money(byM[k].a)}</td></tr>`).join('')}</table></div>`;
+    }
+    return `<section class="panel acad-block">
+      <h3>${esc(a.name)} <span class="muted" style="font-weight:400;font-size:14px">— ${esc(nameOf('fields',a.fieldId))} — نسبتي ${a.myPct}% / الأكاديمية ${100-a.myPct}%</span></h3>
+      ${ps.length?monthly+`<div class="tablewrap"><table><tr><th>التاريخ</th><th>المشترك</th><th>النوع</th><th>الفترة</th><th>المبلغ</th><th>نسبتي</th><th>نصيبي</th><th>نصيب الأكاديمية</th></tr>
+      ${ps.map(p=>`<tr><td>${p.date}</td><td>${esc(p.memberName||nameOf('members',p.memberId))}</td><td>${p.type==='new'?'جديد':'تجديد'}</td>
+        <td>${p.start} → ${p.end}</td><td class="num">${money(p.amount)}</td><td class="num">${p.pct??a.myPct}%</td>
+        <td class="num">${money(p.myShare)}</td><td class="num">${money(p.academyShare)}</td></tr>`).join('')}
+      <tr style="background:#eef3ea;font-weight:900"><td colspan="4">الإجمالي (${nNew} جديد + ${nRen} تجديد)</td>
+        <td class="num">${money(total)}</td><td></td><td class="num">${money(mine)}</td><td class="num">${money(acad)}</td></tr></table></div>`
+      :'<div class="empty">مفيش عمليات في الفترة دي</div>'}
+    </section>`;
+  }).join('');
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">تقرير الأكاديميات <span class="muted" style="font-size:15px">— ${repFilter.month||'كل الفترات'}</span></h2>
+    <button class="btn gold noprint" onclick="exportReport()">تصدير PDF</button></div>
+  <div class="toolbar noprint">
+    <label style="margin:0">الشهر</label>
+    <input type="month" style="width:auto" value="${repFilter.month}" onchange="repFilter.month=this.value;render()">
+    <button class="btn sm ghost" onclick="repFilter.month='';render()">كل الأشهر</button>
+    <select style="max-width:220px" onchange="repFilter.academy=this.value;render()"><option value="">كل الأكاديميات</option>${options('academies',repFilter.academy)}</select>
+  </div>
+  <div class="totals">
+    <div class="tot"><small>إجمالي المقبوض</small><b>${money(G.total)}</b></div>
+    <div class="tot gold"><small>نصيبي</small><b>${money(G.mine)}</b></div>
+    <div class="tot"><small>مستحق للأكاديميات</small><b>${money(G.acad)}</b></div>
+  </div>
+  ${blocks||'<div class="panel empty">لسه مفيش أكاديميات</div>'}`;
+}
+function exportReport(){
+  const t=document.title;
+  document.title='تقرير الأكاديميات '+(repFilter.month||'كل الفترات');
+  window.print();
+  document.title=t;
+}
 /* ============ حذف عام + التنقل ============ */
 async function delItem(col,id){
   if(col==='fields' && (store.academies.some(a=>a.fieldId===id)||store.rentals.some(r=>r.fieldId===id)))
@@ -506,9 +564,9 @@ async function delItem(col,id){
   await Data.del(col,id);
 }
 let tab='accounts';
-const views={accounts:viewAccounts,members:viewMembers,rentals:viewRentals,academies:viewAcademies,fields:viewFields,logs:viewLogs};
+const views={accounts:viewAccounts,members:viewMembers,rentals:viewRentals,academies:viewAcademies,fields:viewFields,logs:viewLogs,report:viewReport};
 function render(){
-  if(tab==='logs'&&!isAdmin) tab='accounts';
+  if((tab==='logs'||tab==='report')&&!isAdmin) tab='accounts';
   $('#view').innerHTML=views[tab]();
 }
 $('#nav').onclick=e=>{
@@ -525,6 +583,7 @@ const mt=$('#modeTag');
 if(!useFirebase){
   mt.textContent='وضع تجريبي (تخزين محلي)'; mt.classList.add('warn');
   $('#logsTab').hidden=false; Data.start();
+  $('#reportTab').hidden=false;
 }else{
   let started=false;
   firebase.auth().onAuthStateChanged(u=>{
@@ -533,6 +592,7 @@ if(!useFirebase){
     USER={email:u.email,uid:u.uid};
     isAdmin=u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase();
     $('#logsTab').hidden=!isAdmin;
+    $('#reportTab').hidden=!isAdmin;
     mt.textContent=(isAdmin?'أدمن: ':'مستخدم: ')+u.email;
     if(!started){ started=true; Data.start(); }
   });
