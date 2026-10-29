@@ -219,6 +219,7 @@ dialog::backdrop{background:rgba(4,20,14,.62);backdrop-filter:blur(5px)}
     <div class="side">
       <span class="mode" id="modeTag"></span>
       <button class="btn sm ghost" id="themeBtn" onclick="toggleTheme()">🌙 الوضع الداكن</button>
+      <button class="btn sm ghost" id="xlBtn" onclick="exportExcel()" hidden>تصدير Excel</button>
       <button class="btn sm ghost" id="bkBtn" onclick="exportBackup()" hidden>نسخة JSON</button>
       <button class="btn sm ghost" id="logoutBtn" hidden
         onclick="firebase.auth().signOut().then(()=>location.reload())">خروج</button>
@@ -417,7 +418,7 @@ function viewAcademies(){
   <div class="panel tablewrap">${store.academies.length?`<table><tr><th>الأكاديمية</th><th>الملعب</th><th>الاشتراك</th><th>نسبتي</th><th>نسبة الأكاديمية</th><th>مشتركين</th><th></th></tr>
   ${store.academies.map(a=>`<tr><td><b>${esc(a.name)}</b></td><td>${esc(nameOf('fields',a.fieldId))}</td><td class="num">${money(a.price)}</td>
    <td class="num">${a.myPct}%</td><td class="num">${100-a.myPct}%</td><td>${store.members.filter(m=>m.academyId===a.id).length}</td>
-   <td class="act"><button class="btn sm ghost" onclick="academyForm(byId('academies','${a.id}'))">تعديل</button>
+   <td class="act"><button class="btn sm gold" onclick="printRoster('${a.id}','')">كشف المشتركين</button><button class="btn sm ghost" onclick="academyForm(byId('academies','${a.id}'))">تعديل</button>
    <button class="btn sm danger" onclick="delItem('academies','${a.id}')">حذف</button></td></tr>`).join('')}</table>`
    :'<div class="empty">لسه مفيش أكاديميات</div>'}</div>`;
 }
@@ -502,7 +503,7 @@ function viewMembers(){
     (!memberFilter.academy||m.academyId===memberFilter.academy) &&
     (!memberFilter.status||statusOf(m.end)[0]===memberFilter.status)
   ).sort((a,b)=>a.end.localeCompare(b.end));
-  return `<div class="toolbar"><h2 class="grow" style="margin:0">المشتركين</h2><button class="btn" onclick="memberForm()">+ مشترك جديد</button></div>
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">المشتركين</h2><button class="btn ghost" onclick="rosterDialog()">🖨 كشف أعضاء أكاديمية (PDF)</button><button class="btn" onclick="memberForm()">+ مشترك جديد</button></div>
   <div class="toolbar">
     <input style="max-width:220px" placeholder="بحث بالاسم أو الرقم" value="${esc(memberFilter.q)}" oninput="memberFilter.q=this.value;keepFocus(this)">
     <select style="max-width:200px" onchange="memberFilter.academy=this.value;render()"><option value="">كل الأكاديميات</option>${options('academies',memberFilter.academy)}</select>
@@ -651,6 +652,43 @@ function viewAccounts(){
   ${cards||'<div class="panel empty">ضيف الملاعب والأكاديميات وسجل المشتركين عشان الحسابات تظهر</div>'}`;
 }
 
+/* ============ كشف أعضاء الأكاديمية (طباعة / PDF) ============ */
+function printHtml(html,title){
+  $('#rcpt').innerHTML=html;
+  const t=document.title; document.title=title;
+  document.body.classList.add('pr');
+  const done=()=>{document.body.classList.remove('pr');document.title=t;removeEventListener('afterprint',done);removeEventListener('pointerdown',done);};
+  addEventListener('afterprint',done); addEventListener('pointerdown',done);
+  window.print();
+}
+function rosterDialog(){
+  if(!store.academies.length) return alert('لسه مفيش أكاديميات');
+  openDlg(`<h3>كشف أعضاء أكاديمية</h3>
+    <div class="field"><label>الأكاديمية</label><select id="roAc"><option value="">كل الأكاديميات (كل واحدة في صفحة)</option>${options('academies',memberFilter.academy)}</select></div>
+    <div class="field"><label>المشتركين</label><select id="roSt"><option value="">الكل</option><option value="active">الساريين فقط (ساري + قرب يخلص)</option><option value="exp">المنتهية اشتراكاتهم فقط</option></select></div>
+    <div class="hint">هيفتح شاشة الطباعة، اختار منها "حفظ كـ PDF" لو عايز ملف.</div>`,
+  async()=>{ const a=val('roAc'), st=val('roSt'); setTimeout(()=>printRoster(a,st),250); },'طباعة / PDF');
+}
+function printRoster(acId,st){
+  const acs=store.academies.filter(a=>!acId||a.id===acId);
+  if(!acs.length) return alert('لا توجد أكاديميات');
+  const issued=new Date().toLocaleDateString('ar-EG');
+  const stOk=m=>{const c=statusOf(m.end)[0]; return !st||(st==='active'?c!=='exp':c==='exp');};
+  const stTxt=st==='active'?'الساريين فقط':st==='exp'?'المنتهية اشتراكاتهم فقط':'كل المشتركين';
+  const html=acs.map(a=>{
+    const all=store.members.filter(m=>m.academyId===a.id), list=all.filter(stOk).sort((x,y)=>x.name.localeCompare(y.name,'ar'));
+    const cnt={ok:0,soon:0,exp:0}; all.forEach(m=>cnt[statusOf(m.end)[0]]++);
+    return `<section class="acad-block">
+      <div class="st-head"><div><div class="st-org">${esc(ORG_NAME)}</div><h3 style="margin:2px 0 0">كشف المشتركين: ${esc(a.name)}</h3></div>
+        <div class="st-meta">الملعب: <b>${esc(nameOf('fields',a.fieldId))}</b><br>العرض: <b>${stTxt}</b><br>تاريخ الإصدار: <b>${issued}</b></div></div>
+      <div class="st-sum"><div><small class="muted">عدد المعروضين</small><b>${list.length}</b></div><div><small class="muted">ساري</small><b>${cnt.ok}</b></div><div><small class="muted">قرب يخلص</small><b>${cnt.soon}</b></div><div><small class="muted">منتهي</small><b>${cnt.exp}</b></div></div>
+      ${list.length?`<table><tr><th>م</th><th>الاسم</th><th>التليفون</th><th>بداية الاشتراك</th><th>نهاية الاشتراك</th><th>الحالة</th></tr>
+      ${list.map((m,i)=>`<tr><td>${i+1}</td><td><b>${esc(m.name)}</b></td><td>${esc(m.phone||'—')}</td><td>${m.start}</td><td>${m.end}</td><td>${statusOf(m.end)[1]}</td></tr>`).join('')}</table>`:'<div class="empty">مفيش مشتركين مطابقين</div>'}
+    </section>`;
+  }).join('');
+  printHtml(html,'كشف مشتركين '+(acs.length===1?acs[0].name:'الأكاديميات'));
+}
+
 /* ============ أدوات الإيصالات ============ */
 const sum=(a,f)=>a.reduce((s,x)=>s+(+f(x)||0),0);
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('on'),2200);}
@@ -744,6 +782,67 @@ async function exportBackup(){
     setTimeout(()=>URL.revokeObjectURL(a.href),1500);
     toast('تم تنزيل النسخة ('+names.reduce((n,c)=>n+out[c].length,0)+' سجل)');
   }catch(e){ toastErr(e); }
+}
+function loadXLSX(){
+  return new Promise((res,rej)=>{
+    if(window.XLSX) return res();
+    const el=document.createElement('script'); el.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    el.onload=res; el.onerror=()=>rej(new Error('تعذر تحميل مكتبة Excel — محتاج اتصال بالإنترنت'));
+    document.head.appendChild(el);
+  });
+}
+async function exportExcel(){
+  if(!isAdmin) return alert('التصدير للأدمن فقط');
+  try{ toast('جاري تجهيز ملف Excel…'); await loadXLSX(); }catch(e){ return alert(e.message); }
+  const wb=XLSX.utils.book_new(); wb.Workbook={Views:[{RTL:true}]};
+  const add=(name,head,rows,sumCols=[])=>{
+    const aoa=[head,...rows], tot=sumCols.length&&rows.length;
+    if(tot){ const t=head.map(()=>''); t[0]='الإجمالي'; aoa.push(t); }
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    if(tot) sumCols.forEach(ci=>{ const L=XLSX.utils.encode_col(ci); ws[XLSX.utils.encode_cell({r:rows.length+1,c:ci})]={t:'n',v:sum(rows,r=>r[ci]),f:`SUM(${L}2:${L}${rows.length+1})`}; });
+    ws['!cols']=head.map((h,i)=>({wch:Math.min(42,Math.max(String(h).length,...rows.map(r=>String(r[i]??'').length))+3)}));
+    if(rows.length) ws['!autofilter']={ref:XLSX.utils.encode_range({r:0,c:0},{r:rows.length,c:head.length-1})};
+    XLSX.utils.book_append_sheet(wb,ws,name);
+  };
+  const byDate=(a,b)=>(a.date||'').localeCompare(b.date||'');
+  // ملخص
+  const S=periodStats(()=>true), mem={ok:0,soon:0,exp:0}; store.members.forEach(m=>mem[statusOf(m.end)[0]]++);
+  const debts=allDebts(), open=debts.filter(d=>d.rem>0.005), DM=memberDebts();
+  const ws0=XLSX.utils.aoa_to_sheet([['ملخص عام',''],['تاريخ التصدير',todayStr()],['المُصدِّر',USER.email],[],
+    ['الحسابات (على الفلوس المحصّلة فعلاً)',''],['إجمالي مقبوض الاشتراكات',S.subs],['نصيبي من الاشتراكات',S.mine],['مستحق للأكاديميات',S.acad],['إيراد الإيجار',S.rent],['إجمالي المصروفات',S.exp],['صافي الربح',S.profit],[],
+    ['المؤجلات',''],['عدد المؤجلات المفتوحة',open.length],['إجمالي المتبقي',sum(open,d=>d.rem)],[],
+    ['المشتركين',''],['إجمالي المشتركين',store.members.length],['ساري',mem.ok+mem.soon],['منتهي',mem.exp],['عدد الأكاديميات',store.academies.length],['عدد الملاعب',store.fields.length]]);
+  ws0['!cols']=[{wch:38},{wch:20}]; XLSX.utils.book_append_sheet(wb,ws0,'ملخص');
+  // الملخص الشهري
+  const mths=[...new Set([...store.payments,...store.rentals,...store.expenses].map(x=>(x.date||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  add('الملخص الشهري',['الشهر','مقبوض الاشتراكات','نصيبي','نصيب الأكاديميات','إيراد الإيجار','المصروفات','صافي الربح'],
+    mths.map(m=>{const T=periodStats(d=>d.startsWith(m));return [m,T.subs,T.mine,T.acad,T.rent,T.exp,T.profit];}),[1,2,3,4,5,6]);
+  // الاشتراكات
+  add('الاشتراكات',['رقم الإيصال','تاريخ الإيصال','تاريخ العملية','المشترك','الأكاديمية','الملعب','النوع','المدفوع','الإجمالي المتفق عليه','نسبتي %','نصيبي','نسبة الأكاديمية %','نصيب الأكاديمية','بداية الاشتراك','نهاية الاشتراك'],
+    [...store.payments].sort(byDate).map(p=>[p.receiptNo||'',p.receiptDate||'',p.date||'',p.memberName||nameOf('members',p.memberId),nameOf('academies',p.academyId),nameOf('fields',p.fieldId),typeLabel(p),+p.amount||0,p.parentId?'':(p.dueTotal||''),p.pct??'',+p.myShare||0,p.pct==null?'':100-p.pct,+p.academyShare||0,p.start||'',p.end||'']),[7,10,12]);
+  // الإيجارات
+  add('الإيجارات',['رقم الإيصال','تاريخ الإيصال','التاريخ','الملعب','المستأجر','النوع','الساعات','سعر الساعة','المدفوع','الإجمالي المتفق عليه'],
+    [...store.rentals].sort(byDate).map(r=>[r.receiptNo||'',r.receiptDate||'',r.date||'',nameOf('fields',r.fieldId),r.renter||'',r.parentId?'سداد متبقي':'إيجار',r.parentId?'':(+r.hours||0),r.parentId?'':(+r.rate||0),+r.total||0,r.parentId?'':(r.dueTotal||'')]),[6,8]);
+  // المصروفات
+  add('المصروفات',['رقم الفاتورة','تاريخ الفاتورة','التاريخ','البيان','المبلغ'],
+    [...store.expenses].sort(byDate).map(e=>[e.receiptNo||'',e.receiptDate||'',e.date||'',e.title||'',+e.amount||0]),[4]);
+  // المؤجلات
+  add('المؤجلات',['النوع','الاسم','الأكاديمية / الملعب','تاريخ العملية','الإجمالي','المدفوع','المتبقي','عدد الدفعات','الحالة','تنازل'],
+    [...debts].sort(byDate).map(d=>[d.type,d.who,d.where,d.date||'',d.total,d.paid,Math.max(0,d.rem),d.kids.length+1,d.rem>0.005?'مفتوح':(d.root.waived?'تنازل':'مسدد'),d.root.waived||'']),[4,5,6]);
+  // كل الإيصالات
+  add('الإيصالات',['رقم الإيصال','التاريخ','النوع','الاسم / البيان','الأكاديمية','الملعب','المبلغ (المصروف بالسالب)'],
+    allReceipts().sort((a,b)=>a.date.localeCompare(b.date)).map(r=>[r.no||'',r.date,r.type,r.who,r.academyId?nameOf('academies',r.academyId):'',r.fieldId?nameOf('fields',r.fieldId):'',(r.kind==='out'?-1:1)*(+r.amount||0)]),[6]);
+  // المشتركين
+  add('المشتركين',['الاسم','التليفون','الأكاديمية','الملعب','بداية الاشتراك','نهاية الاشتراك','الحالة','المتبقي المؤجل'],
+    [...store.members].sort((a,b)=>(a.end||'').localeCompare(b.end||'')).map(m=>[m.name,m.phone||'',nameOf('academies',m.academyId),nameOf('fields',m.fieldId),m.start||'',m.end||'',statusOf(m.end)[1],DM[m.id]||0]),[7]);
+  // الأكاديميات
+  add('الأكاديميات',['الأكاديمية','الملعب','سعر الاشتراك','نسبتي %','نسبة الأكاديمية %','عدد المشتركين','إجمالي المحصّل','نصيبي','نصيب الأكاديمية'],
+    store.academies.map(a=>{const ps=store.payments.filter(p=>p.academyId===a.id);return [a.name,nameOf('fields',a.fieldId),+a.price||0,a.myPct,100-a.myPct,store.members.filter(m=>m.academyId===a.id).length,sum(ps,p=>p.amount),sum(ps,p=>p.myShare),sum(ps,p=>p.academyShare)];}),[5,6,7,8]);
+  // الملاعب
+  add('الملاعب',['الملعب','سعر الساعة','عدد الأكاديميات','إيراد الإيجار','نصيبي من الاشتراكات'],
+    store.fields.map(f=>[f.name,+f.rate||0,store.academies.filter(a=>a.fieldId===f.id).length,sum(store.rentals.filter(r=>r.fieldId===f.id),r=>r.total),sum(store.payments.filter(p=>p.fieldId===f.id),p=>p.myShare)]),[3,4]);
+  XLSX.writeFile(wb,'export_'+todayStr()+'.xlsx');
+  toast('تم تنزيل ملف Excel ('+wb.SheetNames.length+' شيتات)');
 }
 function waLink(m){
   let p=(m.phone||'').replace(/\D/g,''); if(!p) return '';
@@ -1127,7 +1226,7 @@ async function doLogin(){
 const mt=$('#modeTag');
 if(!useFirebase){
   mt.textContent='وضع تجريبي (تخزين محلي)'; mt.classList.add('warn');
-  $('#logsTab').hidden=false; $('#reportTab').hidden=false; $('#dashTab').hidden=false; $('#bkBtn').hidden=false; Data.start();
+  $('#logsTab').hidden=false; $('#reportTab').hidden=false; $('#dashTab').hidden=false; $('#bkBtn').hidden=false; $('#xlBtn').hidden=false; Data.start();
 }else{
   let started=false;
   firebase.auth().onAuthStateChanged(u=>{
@@ -1135,7 +1234,7 @@ if(!useFirebase){
     if(!u) return;
     USER={email:u.email,uid:u.uid};
     isAdmin=u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase();
-    $('#logsTab').hidden=!isAdmin; $('#reportTab').hidden=!isAdmin; $('#dashTab').hidden=!isAdmin; $('#bkBtn').hidden=!isAdmin;
+    $('#logsTab').hidden=!isAdmin; $('#reportTab').hidden=!isAdmin; $('#dashTab').hidden=!isAdmin; $('#bkBtn').hidden=!isAdmin; $('#xlBtn').hidden=!isAdmin;
     mt.textContent=(isAdmin?'أدمن: ':'مستخدم: ')+u.email;
     if(!started){ started=true; go(isAdmin?'dashboard':'accounts'); Data.start(); }
   });
