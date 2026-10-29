@@ -190,6 +190,8 @@ dialog::backdrop{background:rgba(4,20,14,.62);backdrop-filter:blur(5px)}
   .hero{padding:20px}.hero h2{font-size:23px}
 }
 @media(max-width:560px){.row2{grid-template-columns:1fr}}
+.nbadge{margin-right:auto;background:var(--red);color:#fff;border-radius:99px;font-size:11px;font-weight:800;padding:0 8px;line-height:19px}
+.nbadge[hidden]{display:none}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 @media print{
   @page{size:A4;margin:12mm}
@@ -227,6 +229,7 @@ dialog::backdrop{background:rgba(4,20,14,.62);backdrop-filter:blur(5px)}
     <button data-t="accounts"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h12v4"/><path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2z"/><circle cx="16.5" cy="13.5" r="1"/></svg>الحسابات</button>
     <button data-t="members"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.3a6.5 6.5 0 0 1 3.5 5.7"/></svg>المشتركين</button>
     <button data-t="receipts"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>الإيصالات</button>
+    <button data-t="debts"><svg viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3v4l5 5-5 5v4M17 3v4l-5 5 5 5v4"/></svg>المؤجلات<span class="nbadge" id="debtBadge" hidden></span></button>
     <button data-t="rentals"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>إيجار الساعات</button>
     <button data-t="expenses"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>المصروفات</button>
     <button data-t="academies"><svg viewBox="0 0 24 24"><path d="M3 9l9-5 9 5-9 5z"/><path d="M7 11.5V16c0 1.5 2.2 3 5 3s5-1.5 5-3v-4.5"/></svg>الأكاديميات</button>
@@ -282,8 +285,8 @@ function labelOf(c,o){
     case 'fields': return 'ملعب: '+o.name;
     case 'academies': return `أكاديمية: ${o.name} (نسبتي ${o.myPct}%)`;
     case 'members': return `مشترك: ${o.name} — ${nameOf('academies',o.academyId)}`;
-    case 'payments': return `${o.type==='new'?'اشتراك جديد':'تجديد'}: ${o.memberName||''} — ${money(o.amount)}${o.receiptNo?' — إيصال '+o.receiptNo:''}`;
-    case 'rentals': return `إيجار ${nameOf('fields',o.fieldId)} — ${o.hours} ساعة — ${money(o.total)}${o.receiptNo?' — إيصال '+o.receiptNo:''}`;
+    case 'payments': return `${typeLabel(o)}: ${o.memberName||''} — ${money(o.amount)}${o.receiptNo?' — إيصال '+o.receiptNo:''}`;
+    case 'rentals': return `إيجار ${nameOf('fields',o.fieldId)} — ${o.parentId?'سداد متبقي':o.hours+' ساعة'} — ${money(o.total)}${o.receiptNo?' — إيصال '+o.receiptNo:''}`;
     case 'expenses': return `مصروف: ${o.title} — ${money(o.amount)}${o.receiptNo?' — فاتورة '+o.receiptNo:''}`;
   }
   return c;
@@ -435,21 +438,23 @@ function memberForm(){
     <div class="field"><label>الملعب</label>
       <select id="mField" onchange="pickAcademies()">${fieldsWithAcad.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></div>
     <div class="field"><label>الأكاديمية</label>
-      <select id="mAcad" onchange="$('#mAmount').value=byId('academies',this.value).price||''">
+      <select id="mAcad" onchange="$('#mAmount').value=byId('academies',this.value).price||'';syncPaid('m','mAmount')">
       ${store.academies.filter(a=>a.fieldId===f0.id).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
     <div class="row2">
-      <div class="field"><label>المبلغ المدفوع</label><input id="mAmount" type="number" min="0" value="${a0.price||''}"></div>
+      <div class="field"><label>الإجمالي المتفق عليه</label><input id="mAmount" type="number" min="0" value="${a0.price||''}" oninput="syncPaid('m','mAmount')"></div>
       <div class="field"><label>أول يوم اشتراك</label><input id="mStart" type="date" value="${todayStr()}" onchange="$('#mEnd').value=addMonth(this.value)"></div>
     </div>
     <div class="field"><label>تاريخ الانتهاء (شهر)</label><input id="mEnd" type="date" value="${addMonth(todayStr())}"></div>
+    ${paidFields('m','mAmount',a0.price||'')}
     ${rcptFields('m')}${printChk('m')}`,
   async()=>{
     if(!val('mName')) return alert('اكتب اسم المشترك'), false;
     const amount=+val('mAmount'); if(!(amount>0)) return alert('اكتب المبلغ'), false;
-    const a=byId('academies',val('mAcad')); const s=calcSplit(a,amount);
+    const paid=readPaid('m',amount); if(paid===false) return false;
+    const a=byId('academies',val('mAcad')); const s=calcSplit(a,paid);
     const rc=readRcpt('m','in'); if(!rc) return false;
     const mid=await Data.add('members',{name:val('mName'),phone:val('mPhone'),academyId:a.id,fieldId:a.fieldId,start:val('mStart'),end:val('mEnd')});
-    const pay={memberId:mid,memberName:val('mName'),academyId:a.id,fieldId:a.fieldId,type:'new',amount,...s,date:val('mStart'),start:val('mStart'),end:val('mEnd'),...rc};
+    const pay={memberId:mid,memberName:val('mName'),academyId:a.id,fieldId:a.fieldId,type:'new',amount:paid,...(paid<amount?{dueTotal:amount}:{}),...s,date:val('mStart'),start:val('mStart'),end:val('mEnd'),...rc};
     const pid=await Data.add('payments',pay,{silent:true});
     if($('#mPrint').checked) setTimeout(()=>printReceiptData('payments',{id:pid,...pay}),300);
   });
@@ -457,7 +462,7 @@ function memberForm(){
 function pickAcademies(){
   const list=store.academies.filter(a=>a.fieldId===val('mField'));
   $('#mAcad').innerHTML=list.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
-  $('#mAmount').value=list[0]?.price||'';
+  $('#mAmount').value=list[0]?.price||''; syncPaid('m','mAmount');
 }
 function renewForm(id){
   const m=byId('members',id), a=byId('academies',m.academyId);
@@ -466,16 +471,18 @@ function renewForm(id){
   openDlg(`<h3>تجديد: ${esc(m.name)}</h3>
     <div class="hint" style="margin-bottom:10px">${esc(a.name)} — الاشتراك الحالي ينتهي ${m.end}</div>
     <div class="row2">
-      <div class="field"><label>المبلغ</label><input id="rAmount" type="number" min="0" value="${a.price||''}"></div>
+      <div class="field"><label>الإجمالي المتفق عليه</label><input id="rAmount" type="number" min="0" value="${a.price||''}" oninput="syncPaid('rn','rAmount')"></div>
       <div class="field"><label>بداية التجديد</label><input id="rStart" type="date" value="${startDefault}" onchange="$('#rEnd').value=addMonth(this.value)"></div>
     </div>
     <div class="field"><label>الانتهاء الجديد</label><input id="rEnd" type="date" value="${addMonth(startDefault)}"></div>
+    ${paidFields('rn','rAmount',a.price||'')}
     ${rcptFields('rn')}${printChk('rn')}`,
   async()=>{
     const amount=+val('rAmount'); if(!(amount>0)) return alert('اكتب المبلغ'), false;
-    const s=calcSplit(a,amount);
+    const paid=readPaid('rn',amount); if(paid===false) return false;
+    const s=calcSplit(a,paid);
     const rc=readRcpt('rn','in'); if(!rc) return false;
-    const pay={memberId:m.id,memberName:m.name,academyId:a.id,fieldId:a.fieldId,type:'renew',amount,...s,date:val('rStart'),start:val('rStart'),end:val('rEnd'),...rc};
+    const pay={memberId:m.id,memberName:m.name,academyId:a.id,fieldId:a.fieldId,type:'renew',amount:paid,...(paid<amount?{dueTotal:amount}:{}),...s,date:val('rStart'),start:val('rStart'),end:val('rEnd'),...rc};
     const pid=await Data.add('payments',pay);
     if($('#rnPrint').checked) setTimeout(()=>printReceiptData('payments',{id:pid,...pay}),300);
     await Data.set('members',m.id,{start:val('rStart'),end:val('rEnd')},{silent:true});
@@ -485,11 +492,11 @@ function historyOf(id){
   const m=byId('members',id);
   const rows=store.payments.filter(p=>p.memberId===id).sort((a,b)=>b.date.localeCompare(a.date));
   openDlg(`<h3>سجل مدفوعات: ${esc(m.name)}</h3><div class="tablewrap"><table><tr><th>إيصال</th><th>تاريخ الإيصال</th><th>النوع</th><th>المبلغ</th><th>نصيبي</th><th>الفترة</th><th></th></tr>
-   ${rows.map(p=>`<tr><td>${p.receiptNo?`<b>${esc(p.receiptNo)}</b>`:'<span class="tag exp">بدون</span>'}</td><td>${p.receiptDate||'—'}</td><td>${p.type==='new'?'جديد':'تجديد'}</td><td class="num">${money(p.amount)}</td><td class="num">${money(p.myShare)}</td><td>${p.start} → ${p.end}</td>
+   ${rows.map(p=>`<tr><td>${p.receiptNo?`<b>${esc(p.receiptNo)}</b>`:'<span class="tag exp">بدون</span>'}</td><td>${p.receiptDate||'—'}</td><td>${typeShort(p)}</td><td class="num">${money(p.amount)}</td><td class="num">${money(p.myShare)}</td><td>${p.start} → ${p.end}</td>
    <td class="act"><button class="btn sm ghost" onclick="printReceipt('payments','${p.id}')">طباعة</button><button class="btn sm ghost" onclick="editReceipt('payments','${p.id}')">تعديل</button></td></tr>`).join('')}</table></div>`,()=>true,'تمام');
 }
 function viewMembers(){
-  const q=memberFilter.q.toLowerCase();
+  const q=memberFilter.q.toLowerCase(); const DM=memberDebts();
   const list=store.members.filter(m=>
     (!q||m.name.toLowerCase().includes(q)||(m.phone||'').includes(q)) &&
     (!memberFilter.academy||m.academyId===memberFilter.academy) &&
@@ -506,7 +513,7 @@ function viewMembers(){
       <option value="exp" ${memberFilter.status==='exp'?'selected':''}>منتهي</option></select>
   </div>
   <div class="panel tablewrap">${list.length?`<table><tr><th>الاسم</th><th>التليفون</th><th>الملعب</th><th>الأكاديمية</th><th>البداية</th><th>الانتهاء</th><th>الحالة</th><th></th></tr>
-  ${list.map(m=>{const [c,t]=statusOf(m.end);return `<tr><td><b>${esc(m.name)}</b></td><td>${esc(m.phone||'—')}</td>
+  ${list.map(m=>{const [c,t]=statusOf(m.end);return `<tr><td><b>${esc(m.name)}</b>${DM[m.id]?` <span class="tag exp" style="cursor:pointer" title="افتح المؤجلات" onclick="openMemberDebt('${m.id}')">متبقي ${money(DM[m.id])}</span>`:''}</td><td>${esc(m.phone||'—')}</td>
    <td>${esc(nameOf('fields',m.fieldId))}</td><td>${esc(nameOf('academies',m.academyId))}</td><td>${m.start}</td><td>${m.end}</td>
    <td><span class="tag ${c}">${t}</span></td>
    <td class="act"><button class="btn sm gold" onclick="renewForm('${m.id}')">تجديد</button>
@@ -536,25 +543,27 @@ function rentalForm(){
     </div>
     <div class="row2">
       <div class="field"><label>سعر الساعة</label><input id="rRate" type="number" min="0" value="${f0.rate||''}" oninput="calcRent()"></div>
-      <div class="field"><label>الإجمالي</label><input id="rTotal" type="number" min="0" value="${f0.rate||''}"></div>
+      <div class="field"><label>الإجمالي</label><input id="rTotal" type="number" min="0" value="${f0.rate||''}" oninput="syncPaid('rt','rTotal')"></div>
     </div>
+    ${paidFields('rt','rTotal',f0.rate||'')}
     ${rcptFields('rt')}${printChk('rt')}`,
   async()=>{
     const hours=+val('rHours'), total=+val('rTotal');
     if(!(hours>0)||!(total>=0)) return alert('راجع الساعات والمبلغ'), false;
+    const paid=readPaid('rt',total); if(paid===false) return false;
     const rc=readRcpt('rt','in'); if(!rc) return false;
-    const o={fieldId:val('rField'),renter:val('rName'),date:val('rDate'),hours,rate:+val('rRate')||0,total,...rc};
+    const o={fieldId:val('rField'),renter:val('rName'),date:val('rDate'),hours,rate:+val('rRate')||0,total:paid,...(paid<total?{dueTotal:total}:{}),...rc};
     const id=await Data.add('rentals',o);
     if($('#rtPrint').checked) setTimeout(()=>printReceiptData('rentals',{id,...o}),300);
   });
 }
-function calcRent(){ $('#rTotal').value=(+$('#rHours').value||0)*(+$('#rRate').value||0); }
+function calcRent(){ $('#rTotal').value=(+$('#rHours').value||0)*(+$('#rRate').value||0); syncPaid('rt','rTotal'); }
 function viewRentals(){
   const list=[...store.rentals].sort((a,b)=>b.date.localeCompare(a.date));
   return `<div class="toolbar"><h2 class="grow" style="margin:0">إيجار الساعات</h2><button class="btn" onclick="rentalForm()">+ حجز جديد</button></div>
   <div class="panel tablewrap">${list.length?`<table><tr><th>إيصال</th><th>التاريخ</th><th>الملعب</th><th>المستأجر</th><th>الساعات</th><th>سعر الساعة</th><th>الإجمالي</th><th></th></tr>
-  ${list.map(r=>`<tr><td>${r.receiptNo?`<b>${esc(r.receiptNo)}</b>`:'<span class="tag exp">بدون</span>'}</td><td>${r.date}</td><td>${esc(nameOf('fields',r.fieldId))}</td><td>${esc(r.renter||'—')}</td><td class="num">${r.hours}</td><td class="num">${money(r.rate)}</td><td class="num">${money(r.total)}</td>
-   <td class="act"><button class="btn sm ghost" onclick="printReceipt('rentals','${r.id}')">طباعة</button><button class="btn sm ghost" onclick="editReceipt('rentals','${r.id}')">الإيصال</button><button class="btn sm danger" onclick="delItem('rentals','${r.id}')">حذف</button></td></tr>`).join('')}</table>`
+  ${list.map(r=>`<tr><td>${r.receiptNo?`<b>${esc(r.receiptNo)}</b>`:'<span class="tag exp">بدون</span>'}</td><td>${r.date}</td><td>${esc(nameOf('fields',r.fieldId))}</td><td>${esc(r.renter||'—')}${r.parentId?' <span class="tag ok">سداد متبقي</span>':''}</td><td class="num">${r.parentId?'—':r.hours}</td><td class="num">${r.parentId?'—':money(r.rate)}</td><td class="num">${money(r.total)}${r.dueTotal?` <span class="tag soon">من ${money(r.dueTotal)}</span>`:''}</td>
+   <td class="act">${r.dueTotal&&!r.parentId&&debtInfo('rentals',r).rem>0.005?`<button class="btn sm gold" onclick="payDebt('rentals','${r.id}')">تسديد</button>`:''}<button class="btn sm ghost" onclick="printReceipt('rentals','${r.id}')">طباعة</button><button class="btn sm ghost" onclick="editReceipt('rentals','${r.id}')">الإيصال</button><button class="btn sm danger" onclick="delItem('rentals','${r.id}')">حذف</button></td></tr>`).join('')}</table>`
    :'<div class="empty">مفيش حجوزات لسه</div>'}</div>`;
 }
 
@@ -646,7 +655,7 @@ function viewAccounts(){
 const sum=(a,f)=>a.reduce((s,x)=>s+(+f(x)||0),0);
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('on'),2200);}
 function allReceipts(){
-  const P=store.payments.map(p=>({id:p.id,col:'payments',kind:'in',no:p.receiptNo||'',date:p.receiptDate||p.date,type:p.type==='new'?'اشتراك جديد':'تجديد',who:p.memberName||nameOf('members',p.memberId),academyId:p.academyId,fieldId:p.fieldId,amount:p.amount}));
+  const P=store.payments.map(p=>({id:p.id,col:'payments',kind:'in',no:p.receiptNo||'',date:p.receiptDate||p.date,type:typeLabel(p),who:p.memberName||nameOf('members',p.memberId),academyId:p.academyId,fieldId:p.fieldId,amount:p.amount}));
   const R=store.rentals.map(r=>({id:r.id,col:'rentals',kind:'in',no:r.receiptNo||'',date:r.receiptDate||r.date,type:'إيجار ساعات',who:r.renter||'—',fieldId:r.fieldId,amount:r.total}));
   const E=store.expenses.map(e=>({id:e.id,col:'expenses',kind:'out',no:e.receiptNo||'',date:e.receiptDate||e.date,type:'مصروف',who:e.title,amount:e.amount}));
   return [...P,...R,...E];
@@ -684,15 +693,17 @@ function editReceipt(col,id){
 function printReceipt(col,id){ const x=byId(col,id); if(x) printReceiptData(col,x); }
 function printReceiptData(col,x){
   const out=col==='expenses'; let who,what,sub,amt;
-  if(col==='payments'){who=x.memberName||nameOf('members',x.memberId);what=(x.type==='new'?'اشتراك جديد':'تجديد اشتراك')+' — '+nameOf('academies',x.academyId);sub='الملعب: '+nameOf('fields',x.fieldId)+' | عن الفترة: '+x.start+' ← '+x.end;amt=x.amount;}
+  if(col==='payments'){who=x.memberName||nameOf('members',x.memberId);what=(x.parentId?'سداد المتبقي من ':'')+(x.type==='new'?'اشتراك جديد':'تجديد اشتراك')+' — '+nameOf('academies',x.academyId);sub='الملعب: '+nameOf('fields',x.fieldId)+' | عن الفترة: '+x.start+' ← '+x.end;amt=x.amount;}
   else if(col==='rentals'){who=x.renter||'—';what='إيجار ملعب '+nameOf('fields',x.fieldId);sub=x.hours+' ساعة × '+money(x.rate)+' | بتاريخ '+x.date;amt=x.total;}
   else{who=x.title;what='مصروف';sub='بتاريخ '+x.date;amt=x.amount;}
+  const dt=out?null:dealTotals(col,x);
+  const dealRows=dt?`<tr><th>إجمالي المتفق عليه</th><td>${money(dt.total)}</td></tr><tr><th>المدفوع حتى هذا الإيصال</th><td>${money(dt.paid)}</td></tr><tr><th>المتبقي</th><td><b>${dt.rem>0?money(dt.rem):'مسدد بالكامل'}</b></td></tr>`:'';
   const copy=t=>`<div class="rc"><div class="rc-h"><b>${esc(ORG_NAME)}</b><span>${t}</span></div>
     <h2>${out?'سند صرف':'إيصال استلام نقدية'}</h2>
     <div class="rc-meta"><div>رقم ${out?'السند':'الإيصال'}: <b>${esc(x.receiptNo||'—')}</b></div><div>التاريخ: <b>${x.receiptDate||x.date}</b></div></div>
     <table class="rc-t"><tr><th>${out?'صُرف إلى / البيان':'استلمنا من السيد/ة'}</th><td>${esc(who)}</td></tr>
     <tr><th>وذلك عن</th><td>${esc(what)}<div class="muted" style="font-size:12px">${esc(sub)}</div></td></tr>
-    <tr><th>المبلغ</th><td><b style="font-size:20px">${money(amt)}</b></td></tr></table>
+    <tr><th>${dt?'المبلغ المدفوع':'المبلغ'}</th><td><b style="font-size:20px">${money(amt)}</b></td></tr>${dealRows}</table>
     <div class="rc-sign"><span>${out?'توقيع المستلم':'توقيع المحصّل'}</span><span>الختم / توقيع الإدارة</span></div></div>`;
   $('#rcpt').innerHTML=copy('نسخة العميل')+copy('نسخة الإدارة');
   const t=document.title; document.title=(out?'سند ':'إيصال ')+(x.receiptNo||'');
@@ -759,6 +770,126 @@ function viewReceipts(){
    :'<div class="empty">مفيش إيصالات مطابقة</div>'}</div>`;
 }
 
+/* ============ المؤجلات (دفع جزئي) ============ */
+const typeLabel=p=>p.parentId?'سداد متبقي':(p.type==='new'?'اشتراك جديد':'تجديد');
+const typeShort=p=>p.parentId?'سداد متبقي':(p.type==='new'?'جديد':'تجديد');
+const amtOf=(col,x)=>+(col==='rentals'?x.total:x.amount)||0;
+function debtInfo(col,root){
+  const kids=store[col].filter(c=>c.parentId===root.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const paid=amtOf(col,root)+sum(kids,k=>amtOf(col,k));
+  return {total:root.dueTotal,paid,rem:Math.round((root.dueTotal-paid)*100)/100,kids};
+}
+function allDebts(){
+  const out=[];
+  ['payments','rentals'].forEach(col=>store[col].filter(x=>x.dueTotal&&!x.parentId).forEach(x=>{
+    out.push({col,id:x.id,root:x,...debtInfo(col,x),date:x.date,
+      who:col==='payments'?(x.memberName||nameOf('members',x.memberId)):(x.renter||'—'),
+      where:col==='payments'?nameOf('academies',x.academyId):nameOf('fields',x.fieldId),
+      type:col==='payments'?(x.type==='new'?'اشتراك جديد':'تجديد'):'إيجار ساعات'});
+  }));
+  return out;
+}
+function memberDebts(){const m={};allDebts().filter(d=>d.col==='payments'&&d.rem>0.005).forEach(d=>{m[d.root.memberId]=(m[d.root.memberId]||0)+d.rem;});return m;}
+function dealTotals(col,x){
+  const root=x.parentId?byId(col,x.parentId):x; if(!root||!root.dueTotal) return null;
+  const arr=store[col], xi=arr.findIndex(z=>z.id===x.id);
+  const prior=arr.filter(k=>k.parentId===root.id&&k.id!==x.id&&((k.date||'')<(x.date||'')||((k.date||'')===(x.date||'')&&(xi<0||arr.indexOf(k)<xi))));
+  const paid=(x.parentId?amtOf(col,root):0)+sum(prior,k=>amtOf(col,k))+amtOf(col,x);
+  return {total:root.dueTotal,paid,rem:Math.max(0,Math.round((root.dueTotal-paid)*100)/100)};
+}
+const paidFields=(p,totId,total)=>`<div class="row2"><div class="field"><label>المدفوع الآن</label><input id="${p}Paid" data-tot="${totId}" type="number" min="0" step="any" value="${total}" oninput="this.dataset.t=1;remCalc('${p}')"></div>
+  <div class="field"><label>المتبقي (مؤجل)</label><input id="${p}Rem" readonly value="0" style="font-weight:800"></div></div><div class="hint" id="${p}Hint" style="margin:-6px 0 10px"></div>`;
+function remCalc(p){
+  const el=$('#'+p+'Paid'); if(!el) return;
+  const tot=+$('#'+el.dataset.tot).value||0, paid=+el.value||0, rem=Math.max(0,Math.round((tot-paid)*100)/100), r=$('#'+p+'Rem');
+  r.value=rem; r.style.color=rem>0?'var(--red)':'';
+  $('#'+p+'Hint').textContent=paid>tot?'⚠️ المدفوع أكبر من الإجمالي':rem>0?`هيتسجل مؤجل ${rem.toLocaleString('ar-EG')} ج، وتقدر تسدده بعدين من تبويب المؤجلات`:'';
+}
+function syncPaid(p,totId){ const el=$('#'+p+'Paid'); if(!el) return; if(!el.dataset.t) el.value=$('#'+totId).value; remCalc(p); }
+function readPaid(p,total){
+  const paid=+val(p+'Paid');
+  if(!(total>0)) return alert('اكتب الإجمالي'), false;
+  if(!(paid>0)) return alert('اكتب المبلغ المدفوع (لازم يكون أكبر من صفر)'), false;
+  if(paid>total) return alert('المدفوع أكبر من الإجمالي'), false;
+  return paid;
+}
+function waDebt(d){
+  if(d.col!=='payments') return '';
+  const m=byId('members',d.root.memberId); let p=(m?.phone||'').replace(/\D/g,''); if(!p) return '';
+  if(p.startsWith('00')) p=p.slice(2); else if(p.startsWith('0')) p='20'+p.slice(1);
+  const t=`أهلاً ${m.name}، متبقي عليك ${money(d.rem)} من اشتراكك في ${d.where}. برجاء السداد في أقرب وقت. شكراً.`;
+  return `<a class="btn sm ghost" target="_blank" rel="noopener" href="https://wa.me/${p}?text=${encodeURIComponent(t)}">واتساب</a>`;
+}
+let dbF={q:'',type:'',settled:false};
+function openMemberDebt(id){ dbF.q=byId('members',id)?.name||''; dbF.settled=false; go('debts'); }
+function viewDebts(){
+  const all=allDebts(), open=all.filter(d=>d.rem>0.005), done=all.filter(d=>d.rem<=0.005), q=dbF.q.toLowerCase();
+  const list=(dbF.settled?done:open).filter(d=>(!q||d.who.toLowerCase().includes(q))&&(!dbF.type||d.col===dbF.type)).sort((a,b)=>a.date.localeCompare(b.date));
+  const age=d=>Math.max(0,-daysLeft(d));
+  const oldest=open.length?Math.max(...open.map(d=>age(d.date))):0;
+  return `<div class="toolbar"><h2 class="grow" style="margin:0">المؤجلات</h2></div>
+  <div class="kpis">${kpi('مؤجلات مفتوحة',open.length,'حالة لسه عليها متبقي','gold')}${kpi('إجمالي المتبقي',money(sum(open,d=>d.rem)),'لسه متحصّلش','red')}
+    ${kpi('متبقي اشتراكات',money(sum(open.filter(d=>d.col==='payments'),d=>d.rem)),'','blue')}${kpi('متبقي إيجار',money(sum(open.filter(d=>d.col==='rentals'),d=>d.rem)),'','blue')}
+    ${kpi('أقدم مؤجل',oldest+' يوم',open.length?'من تاريخ العملية':'مفيش مؤجلات 👌')}</div>
+  <div class="toolbar">
+    <input style="max-width:240px" placeholder="بحث بالاسم" value="${esc(dbF.q)}" oninput="dbF.q=this.value;keepFocus(this)">
+    <select style="max-width:170px" onchange="dbF.type=this.value;render()"><option value="">اشتراكات وإيجار</option><option value="payments" ${dbF.type==='payments'?'selected':''}>اشتراكات</option><option value="rentals" ${dbF.type==='rentals'?'selected':''}>إيجار</option></select>
+    <button class="btn sm ${dbF.settled?'ghost':''}" onclick="dbF.settled=false;render()">المفتوحة (${open.length})</button>
+    <button class="btn sm ${dbF.settled?'':'ghost'}" onclick="dbF.settled=true;render()">المسددة (${done.length})</button>
+    ${dbF.q?`<button class="btn sm ghost" onclick="dbF.q='';render()">مسح البحث</button>`:''}
+  </div>
+  <div class="panel tablewrap">${list.length?`<table><tr><th>النوع</th><th>الاسم</th><th>الأكاديمية / الملعب</th><th>تاريخ العملية</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>الدفعات</th><th></th></tr>
+  ${list.map(d=>{const o=d.rem>0.005;return `<tr><td><span class="tag ${d.col==='rentals'?'soon':'ok'}">${d.type}</span></td><td><b>${esc(d.who)}</b></td><td>${esc(d.where)}</td>
+   <td>${d.date}${o?` <span class="muted">(${age(d.date)} يوم)</span>`:''}</td><td class="num">${money(d.total)}</td><td class="num">${money(d.paid)}</td>
+   <td class="num" style="color:${o?'var(--red)':'var(--ok)'}">${o?money(d.rem):(d.root.waived?'تنازل '+money(d.root.waived):'مسدد')}</td><td class="num">${d.kids.length+1}</td>
+   <td class="act">${o?`<button class="btn sm gold" onclick="payDebt('${d.col}','${d.id}')">تسديد</button>`:''}<button class="btn sm ghost" onclick="debtHistory('${d.col}','${d.id}')">الدفعات</button>${o?waDebt(d)+`<button class="btn sm danger" onclick="waiveDebt('${d.col}','${d.id}')">تنازل</button>`:''}</td></tr>`;}).join('')}</table>`
+   :`<div class="empty">${dbF.settled?'مفيش مؤجلات مسددة':'مفيش مؤجلات مفتوحة 👌'}</div>`}</div>`;
+}
+function payDebt(col,id){
+  const root=byId(col,id); if(!root) return;
+  const d=debtInfo(col,root); if(d.rem<=0.005) return alert('الحساب ده مسدد بالكامل');
+  const who=col==='payments'?(root.memberName||nameOf('members',root.memberId)):(root.renter||'إيجار');
+  openDlg(`<h3>تسديد مؤجل — ${esc(who)}</h3>
+    <div class="st-sum"><div><small class="muted">الإجمالي</small><b>${money(d.total)}</b></div><div><small class="muted">المدفوع</small><b>${money(d.paid)}</b></div><div><small class="muted">المتبقي</small><b style="color:var(--red)">${money(d.rem)}</b></div></div>
+    <div class="field"><label>المبلغ المدفوع الآن</label><input id="dpAmt" type="number" min="0" step="any" value="${d.rem}" oninput="$('#dpHint').textContent='المتبقي بعد السداد: '+(Math.max(0,Math.round((${d.rem}-(+this.value||0))*100)/100)).toLocaleString('ar-EG')+' ج'"></div>
+    <div class="hint" id="dpHint" style="margin:-6px 0 10px">المتبقي بعد السداد: ${money(0)}</div>
+    ${rcptFields('dp')}<div class="hint" style="margin:-4px 0 10px">تاريخ الإيصال هو اللي بيتحسب بيه السداد في حسابات الشهر.</div>${printChk('dp')}`,
+  async()=>{
+    const amt=+val('dpAmt');
+    if(!(amt>0)) return alert('اكتب المبلغ'), false;
+    if(amt>d.rem+0.005) return alert('المبلغ أكبر من المتبقي ('+money(d.rem)+')'), false;
+    const rc=readRcpt('dp','in'); if(!rc) return false;
+    let o;
+    if(col==='payments'){
+      const a=byId('academies',root.academyId), pct=root.pct??a?.myPct??0, mine=Math.round(amt*pct)/100;
+      o={memberId:root.memberId,memberName:root.memberName,academyId:root.academyId,fieldId:root.fieldId,type:root.type,parentId:root.id,amount:amt,myShare:mine,academyShare:Math.round((amt-mine)*100)/100,pct,date:rc.receiptDate,start:root.start,end:root.end,...rc};
+    }else{
+      o={fieldId:root.fieldId,renter:root.renter||'',parentId:root.id,date:rc.receiptDate,hours:0,rate:0,total:amt,...rc};
+    }
+    const nid=await Data.add(col,o);
+    if($('#dpPrint').checked) setTimeout(()=>printReceiptData(col,{id:nid,...o}),300);
+  },'تسجيل السداد');
+}
+function debtHistory(col,id){
+  const root=byId(col,id); if(!root) return;
+  const d=debtInfo(col,root), rows=[root,...d.kids];
+  const who=col==='payments'?(root.memberName||nameOf('members',root.memberId)):(root.renter||'إيجار');
+  openDlg(`<h3>دفعات: ${esc(who)}</h3>
+    <div class="st-sum"><div><small class="muted">الإجمالي</small><b>${money(d.total)}</b></div><div><small class="muted">المدفوع</small><b>${money(d.paid)}</b></div><div><small class="muted">المتبقي</small><b style="color:${d.rem>0.005?'var(--red)':'var(--ok)'}">${d.rem>0.005?money(d.rem):(root.waived?'تنازل '+money(root.waived):'مسدد')}</b></div></div>
+    <div class="tablewrap"><table><tr><th>#</th><th>إيصال</th><th>تاريخ الإيصال</th><th>المبلغ</th><th></th></tr>
+    ${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${r.receiptNo?`<b>${esc(r.receiptNo)}</b>`:'<span class="tag exp">بدون</span>'}</td><td>${r.receiptDate||r.date}</td><td class="num">${money(amtOf(col,r))}</td>
+     <td class="act"><button class="btn sm ghost" onclick="printReceipt('${col}','${r.id}')">طباعة</button><button class="btn sm ghost" onclick="editReceipt('${col}','${r.id}')">تعديل</button>${i?`<button class="btn sm danger" onclick="delInstallment('${col}','${r.id}')">حذف</button>`:''}</td></tr>`).join('')}</table></div>`,()=>true,'تمام');
+}
+async function delInstallment(col,id){
+  if(!confirm('هتمسح الدفعة دي ويرجع مبلغها مؤجل من جديد (وهيتخصم من حسابات شهرها). متأكد؟')) return;
+  $('#dlg').close(); await Data.del(col,id);
+}
+async function waiveDebt(col,id){
+  const root=byId(col,id), d=debtInfo(col,root);
+  if(!confirm(`هتتنازل عن المتبقي (${money(d.rem)}) ويتقفل المؤجل ده. المبلغ ده مش هيتحسب في الحسابات. متأكد؟`)) return;
+  await Data.set(col,id,{dueTotal:d.paid,waived:d.rem});
+}
+
 /* ============ لوحة التحكم ============ */
 let dashM=todayStr().slice(0,7);
 function prevMonth(m){const [y,mo]=m.split('-').map(Number);const d=new Date(y,mo-2,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
@@ -766,7 +897,7 @@ function monthsBack(n){const o=[],d=new Date();for(let i=n-1;i>=0;i--){const t=n
 function periodStats(inR){
   const ps=store.payments.filter(p=>inR(p.date)), rs=store.rentals.filter(r=>inR(r.date)), es=store.expenses.filter(e=>inR(e.date));
   const subs=sum(ps,p=>p.amount), mine=sum(ps,p=>p.myShare), acad=sum(ps,p=>p.academyShare), rent=sum(rs,r=>r.total), exp=sum(es,e=>e.amount);
-  return {ps,rs,es,subs,mine,acad,rent,exp,gross:subs+rent,profit:mine+rent-exp,news:ps.filter(p=>p.type==='new').length,renews:ps.filter(p=>p.type==='renew').length,hours:sum(rs,r=>r.hours)};
+  return {ps,rs,es,subs,mine,acad,rent,exp,gross:subs+rent,profit:mine+rent-exp,news:ps.filter(p=>p.type==='new'&&!p.parentId).length,renews:ps.filter(p=>p.type==='renew'&&!p.parentId).length,hours:sum(rs,r=>r.hours)};
 }
 const delta=(c,p)=>{ if(!p) return c?'<span class="dl up">جديد</span>':''; const v=Math.round((c-p)/Math.abs(p)*100); return `<span class="dl ${v>=0?'up':'dn'}">${v>=0?'▲':'▼'} ${Math.abs(v)}%</span>`; };
 function trendChart(){
@@ -791,6 +922,7 @@ function viewDashboard(){
   const cmp=(c,p)=>P?delta(c,p)+' <span class="muted" style="font-size:11px">عن الشهر اللي فات</span>':'';
   const mem={ok:0,soon:0,exp:0}; store.members.forEach(m=>mem[statusOf(m.end)[0]]++);
   const missing=allReceipts().filter(r=>r.kind==='in'&&!r.no).length;
+  const dOpen=allDebts().filter(d=>d.rem>0.005), dRem=sum(dOpen,d=>d.rem);
   const acs=store.academies.map(a=>{const ps=S.ps.filter(p=>p.academyId===a.id);return {a,n:ps.length,total:sum(ps,p=>p.amount),mine:sum(ps,p=>p.myShare),members:store.members.filter(m=>m.academyId===a.id).length};}).sort((x,y)=>y.total-x.total);
   const flds=store.fields.map(f=>{const sub=sum(S.ps.filter(p=>p.fieldId===f.id),p=>p.myShare),rent=sum(S.rs.filter(r=>r.fieldId===f.id),r=>r.total);return {f,sub,rent,t:sub+rent};}).sort((x,y)=>y.t-x.t);
   const need=store.members.map(m=>({m,d:daysLeft(m.end)})).filter(x=>x.d<=7&&x.d>=-30).sort((a,b)=>a.d-b.d).slice(0,10);
@@ -803,8 +935,9 @@ function viewDashboard(){
     ${kpi('صافي الربح (بعد المصروفات)',money(S.profit),cmp(S.profit,P?.profit),'gold')}
     ${kpi('إجمالي المقبوض (اشتراكات + إيجار)',money(S.gross),cmp(S.gross,P?.gross))}
     ${kpi('نصيبي من الأكاديميات',money(S.mine),`من ${S.ps.length} عملية`)}
-    ${kpi('إيراد إيجار الساعات',money(S.rent),`${S.hours} ساعة · ${S.rs.length} حجز`,'blue')}
+    ${kpi('إيراد إيجار الساعات',money(S.rent),`${S.hours} ساعة · ${S.rs.filter(r=>!r.parentId).length} حجز`,'blue')}
     ${kpi('المصروفات',money(S.exp),cmp(S.exp,P?.exp),'red')}
+    ${kpi('مؤجلات لسه متحصّلتش',money(dRem),`${dOpen.length} حالة مفتوحة · حتى اليوم`,'red')}
     ${kpi('مستحق للأكاديميات',money(S.acad),'من إجمالي اشتراكات '+money(S.subs),'blue')}
     ${kpi('المشتركين الساريين',mem.ok+mem.soon,`${mem.soon} قرب يخلص · ${mem.exp} منتهي · إجمالي ${store.members.length}`)}
     ${kpi('اشتراكات جديدة / تجديدات',S.news+' / '+S.renews,'في الفترة المختارة')}
@@ -818,6 +951,9 @@ function viewDashboard(){
     <div class="panel"><h3>حالة الاشتراكات</h3>${stack([{l:'ساري',v:mem.ok,c:'var(--ok)',t:mem.ok},{l:'قرب يخلص',v:mem.soon,c:'var(--amber)',t:mem.soon},{l:'منتهي',v:mem.exp,c:'var(--red)',t:mem.exp}])}</div>
     <div class="panel"><h3>توزيع إجمالي المقبوض</h3>${stack([{l:'نصيبي',v:S.mine,c:'var(--turf)'},{l:'إيجار',v:S.rent,c:'var(--gold)'},{l:'للأكاديميات',v:S.acad,c:'#2f6f9f'}])}</div>
   </div>
+  ${dOpen.length?`<div class="panel tablewrap"><h3>المؤجلات المفتوحة <span class="muted" style="font-size:13px">— الأكبر متبقياً</span></h3><table><tr><th>النوع</th><th>الاسم</th><th>التاريخ</th><th>الإجمالي</th><th>المتبقي</th><th></th></tr>
+    ${[...dOpen].sort((a,b)=>b.rem-a.rem).slice(0,6).map(d=>`<tr><td><span class="tag ${d.col==='rentals'?'soon':'ok'}">${d.type}</span></td><td><b>${esc(d.who)}</b> <span class="muted">— ${esc(d.where)}</span></td><td>${d.date}</td><td class="num">${money(d.total)}</td><td class="num" style="color:var(--red)">${money(d.rem)}</td><td class="act noprint"><button class="btn sm gold" onclick="payDebt('${d.col}','${d.id}')">تسديد</button></td></tr>`).join('')}</table>
+    <div style="margin-top:8px" class="noprint"><button class="btn sm ghost" onclick="go('debts')">كل المؤجلات ←</button></div></div>`:''}
   <div class="grid2">
     <div class="panel tablewrap"><h3>محتاجين متابعة (ينتهي خلال 7 أيام أو انتهى من 30 يوم)</h3>${need.length?`<table><tr><th>المشترك</th><th>الأكاديمية</th><th>الانتهاء</th><th>الحالة</th><th></th></tr>
       ${need.map(({m})=>{const [c,t]=statusOf(m.end);return `<tr><td><b>${esc(m.name)}</b></td><td>${esc(nameOf('academies',m.academyId))}</td><td>${m.end}</td><td><span class="tag ${c}">${t}</span></td>
@@ -836,7 +972,7 @@ function repData(){
   const inR=d=>(!repFilter.from||d>=repFilter.from)&&(!repFilter.to||d<=repFilter.to);
   return store.academies.filter(a=>!repFilter.academy||a.id===repFilter.academy).map(a=>{
     const ps=store.payments.filter(p=>p.academyId===a.id&&inR(p.date)).sort((x,y)=>x.date.localeCompare(y.date)||String(x.receiptNo).localeCompare(String(y.receiptNo),undefined,{numeric:true}));
-    return {a,ps,total:sum(ps,p=>p.amount),mine:sum(ps,p=>p.myShare),acad:sum(ps,p=>p.academyShare),nNew:ps.filter(p=>p.type==='new').length};
+    return {a,ps,total:sum(ps,p=>p.amount),mine:sum(ps,p=>p.myShare),acad:sum(ps,p=>p.academyShare),nNew:ps.filter(p=>p.type==='new'&&!p.parentId).length,nRen:ps.filter(p=>p.type==='renew'&&!p.parentId).length,nInst:ps.filter(p=>p.parentId).length};
   });
 }
 function viewReport(){
@@ -849,13 +985,13 @@ function viewReport(){
     <tr class="tot-row"><td colspan="3">الإجمالي</td><td class="num">${money(G.total)}</td><td class="num">${money(G.acad)}</td><td class="num">${money(G.mine)}</td></tr></table></div></section>`:'';
   const blocks=rows.map(r=>{const a=r.a;
     const cols=[['م',(p,i)=>i+1],['رقم الإيصال',p=>p.receiptNo?`<b>${esc(p.receiptNo)}</b>`:'—'],['تاريخ الإيصال',p=>p.receiptDate||p.date],['المشترك',p=>esc(p.memberName||nameOf('members',p.memberId))],
-      ['النوع',p=>p.type==='new'?'جديد':'تجديد'],['فترة الاشتراك',p=>p.start+' ← '+p.end],['المبلغ المحصل',p=>money(p.amount),'num'],
+      ['النوع',p=>typeShort(p)],['فترة الاشتراك',p=>p.start+' ← '+p.end],['المبلغ المحصل',p=>money(p.amount),'num'],
       ['نسبة الأكاديمية',p=>(100-(p.pct??a.myPct))+'%','num'],['نصيب الأكاديمية',p=>money(p.academyShare),'num']];
     if(!A) cols.push(['نسبتي',p=>(p.pct??a.myPct)+'%','num'],['نصيبي',p=>money(p.myShare),'num']);
     return `<section class="panel acad-block">
       <div class="st-head"><div><div class="st-org">${esc(ORG_NAME)}</div><h3 style="margin:2px 0 0">${A?'كشف حساب أكاديمية':'تقرير داخلي'}: ${esc(a.name)}</h3></div>
         <div class="st-meta">الملعب: <b>${esc(nameOf('fields',a.fieldId))}</b><br>الفترة: <b>${esc(per)}</b><br>تاريخ الإصدار: <b>${issued}</b></div></div>
-      <div class="st-sum"><div><small class="muted">عدد العمليات</small><b>${r.ps.length}</b><small class="muted">${r.nNew} جديد + ${r.ps.length-r.nNew} تجديد</small></div>
+      <div class="st-sum"><div><small class="muted">عدد العمليات</small><b>${r.ps.length}</b><small class="muted">${r.nNew} جديد + ${r.nRen} تجديد${r.nInst?` + ${r.nInst} سداد متبقي`:''}</small></div>
         <div><small class="muted">إجمالي المقبوض</small><b>${money(r.total)}</b></div>
         <div><small class="muted">المستحق للأكاديمية (${100-a.myPct}%)</small><b>${money(r.acad)}</b></div>${A?'':`<div><small class="muted">نصيبي (${a.myPct}%)</small><b>${money(r.mine)}</b></div>`}</div>
       ${r.ps.length?`<div class="tablewrap"><table><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}</tr>
@@ -886,7 +1022,7 @@ function exportReportCSV(){
   const A=repFilter.mode==='academy';
   const head=['الأكاديمية','رقم الإيصال','تاريخ الإيصال','المشترك','النوع','بداية الاشتراك','نهاية الاشتراك','المبلغ المحصل','نسبة الأكاديمية %','نصيب الأكاديمية',...(A?[]:['نسبتي %','نصيبي'])];
   const out=[head];
-  repData().forEach(r=>r.ps.forEach(p=>out.push([r.a.name,p.receiptNo||'',p.receiptDate||p.date,p.memberName||nameOf('members',p.memberId),p.type==='new'?'جديد':'تجديد',p.start,p.end,p.amount,100-(p.pct??r.a.myPct),p.academyShare,...(A?[]:[p.pct??r.a.myPct,p.myShare])])));
+  repData().forEach(r=>r.ps.forEach(p=>out.push([r.a.name,p.receiptNo||'',p.receiptDate||p.date,p.memberName||nameOf('members',p.memberId),typeShort(p),p.start,p.end,p.amount,100-(p.pct??r.a.myPct),p.academyShare,...(A?[]:[p.pct??r.a.myPct,p.myShare])])));
   downloadCSV((A?'academy_statement_':'internal_report_')+todayStr(),out);
 }
 
@@ -937,15 +1073,18 @@ async function delItem(col,id){
     return alert('الملعب عليه أكاديميات أو حجوزات، امسحها الأول');
   if(col==='academies' && store.members.some(m=>m.academyId===id))
     return alert('الأكاديمية عليها مشتركين، امسحهم الأول');
-  if(!confirm('متأكد من الحذف؟')) return;
+  const kids=col==='rentals'?store.rentals.filter(r=>r.parentId===id):[];
+  if(!confirm(kids.length?`الحجز ده عليه ${kids.length} دفعة سداد، هتتمسح معاه. متأكد؟`:'متأكد من الحذف؟')) return;
+  await Promise.all(kids.map(k=>Data.del('rentals',k.id,{silent:true})));
   await Data.del(col,id);
 }
 const ADMIN_TABS=['dashboard','report','logs'];
 let tab='dashboard';
-const views={dashboard:viewDashboard,receipts:viewReceipts,accounts:viewAccounts,members:viewMembers,rentals:viewRentals,expenses:viewExpenses,academies:viewAcademies,fields:viewFields,logs:viewLogs,report:viewReport};
+const views={dashboard:viewDashboard,receipts:viewReceipts,debts:viewDebts,accounts:viewAccounts,members:viewMembers,rentals:viewRentals,expenses:viewExpenses,academies:viewAcademies,fields:viewFields,logs:viewLogs,report:viewReport};
 function render(){
   if(ADMIN_TABS.includes(tab)&&!isAdmin) tab='accounts';
   $('#view').innerHTML=views[tab]();
+  try{ const n=allDebts().filter(d=>d.rem>0.005).length; const b=$('#debtBadge'); b.textContent=n; b.hidden=!n; }catch(e){}
 }
 function go(t){
   tab=t; document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.t===t)); render(); window.scrollTo(0,0);
