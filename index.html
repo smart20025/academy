@@ -615,7 +615,7 @@ function viewAccounts(){
     const acRows=store.academies.filter(a=>a.fieldId===f.id).map(a=>{
       const ps=pays.filter(p=>p.academyId===a.id);
       return {a,
-        news:ps.filter(p=>p.type==='new').length, renews:ps.filter(p=>p.type==='renew').length,
+        news:ps.filter(p=>p.type==='new'&&!p.parentId).length, renews:ps.filter(p=>p.type==='renew'&&!p.parentId).length, insts:ps.filter(p=>p.parentId).length,
         total:ps.reduce((s,p)=>s+p.amount,0), mine:ps.reduce((s,p)=>s+p.myShare,0), acad:ps.reduce((s,p)=>s+p.academyShare,0),
         members:store.members.filter(m=>m.academyId===a.id).length};
     });
@@ -626,8 +626,8 @@ function viewAccounts(){
     return `<section class="pitch">
       <div class="pitch-head"><span>${esc(f.name)}</span><span>الملعب ليا (قبل المصروفات): ${money(mine+rentTotal)}</span></div>
       <div class="pitch-body tablewrap">
-       ${acRows.length?`<table><tr><th>الأكاديمية</th><th>مشتركين حاليين</th><th>اشتراك جديد</th><th>تجديد</th><th>إجمالي المقبوض</th><th>نسبتي</th><th>نصيبي</th><th>نصيب الأكاديمية</th></tr>
-       ${acRows.map(x=>`<tr><td><b>${esc(x.a.name)}</b></td><td class="num">${x.members}</td><td class="num">${x.news}</td><td class="num">${x.renews}</td>
+       ${acRows.length?`<table><tr><th>الأكاديمية</th><th>مشتركين حاليين</th><th>اشتراك جديد</th><th>تجديد</th><th>سداد متبقي</th><th>إجمالي المقبوض</th><th>نسبتي</th><th>نصيبي</th><th>نصيب الأكاديمية</th></tr>
+       ${acRows.map(x=>`<tr><td><b>${esc(x.a.name)}</b></td><td class="num">${x.members}</td><td class="num">${x.news}</td><td class="num">${x.renews}</td><td class="num">${x.insts}</td>
          <td class="num">${money(x.total)}</td><td class="num">${x.a.myPct}%</td><td class="num">${money(x.mine)}</td><td class="num">${money(x.acad)}</td></tr>`).join('')}</table>`
        :'<div class="empty">مفيش أكاديميات على الملعب ده</div>'}
       </div>
